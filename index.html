@@ -2139,7 +2139,7 @@ const FB_CONFIG=window.__FB_CONFIG||{apiKey:"AIzaSyCXrBGCG6y4k4G5YsDdRyByWZh0qXp
 const HK=['ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
 const LOCAL_HK=['mapC','mapZ','pageSel','cur'];
 async function worldKey(pub,pw){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pub+':'+pw));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')}
-const CO={pub:null,on:false,role:null,uid:null,wid:null,db:null,pending:[],seq:0,ackOf:{},headless:false,snapAt:0,lastHS:null,hostName:''};
+const CO={sid:Math.random().toString(36).slice(2),pub:null,on:false,role:null,uid:null,wid:null,db:null,pending:[],seq:0,ackOf:{},headless:false,snapAt:0,lastHS:null,hostName:''};
 const humanP=uid=>S&&S.ai&&S.ai.players.find(p=>p.uid===uid);
 const isHumanPid=pid=>typeof pid==='string'&&pid.startsWith('h_');
 // park the human on top (S.villages, S.hero, ...) in their player entry, so the world holds every human the same way
@@ -2168,7 +2168,7 @@ const ACT=['acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
 function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
-  return {k:++CO.seq,uid:CO.uid,fn,args:JSON.parse(JSON.stringify(args)),inputs,radios,dk:dlgState&&dlgState.k||'',vid:V&&V.id||''}}
+  return {k:++CO.seq,sid:CO.sid,uid:CO.uid,fn,args:JSON.parse(JSON.stringify(args)),inputs,radios,dk:dlgState&&dlgState.k||'',vid:V&&V.id||''}}
 function replay(a){const gid=document.getElementById.bind(document),qs=document.querySelector.bind(document),ds=dlgState;
   CO.headless=true;dlgState={k:a.dk};
   document.getElementById=id=>a.inputs[id]?{value:a.inputs[id].value,checked:a.inputs[id].checked,style:{}}:null;
@@ -2212,8 +2212,8 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- hosting ---------- */
 async function takeLease(){const r=CO.db.ref(`worlds/${CO.wid}/lease`);let won=false;
-  await r.transaction(l=>{if(l&&l.until>Date.now()&&l.uid!==CO.uid)return;won=true;return {uid:CO.uid,name:S&&S.player||'',until:Date.now()+180000}});
-  if(won)r.onDisconnect().set({uid:CO.uid,until:0});return won}
+  await r.transaction(l=>{if(l&&l.until>Date.now()&&l.sid!==CO.sid)return;won=true;return {uid:CO.uid,sid:CO.sid,name:S&&S.player||'',until:Date.now()+180000}});
+  if(won)r.onDisconnect().set({uid:CO.uid,sid:CO.sid,until:0});return won}
 async function becomeHost(have){
   CO.role='host';showNet('Taking over as host…');
   const snap=have?null:await readSnap();if(snap){S=snap.S;const hsAll=(await CO.db.ref(`worlds/${CO.wid}/hs`).get()).val()||{};
@@ -2223,11 +2223,12 @@ async function becomeHost(have){
       for(const k of HK)p[k]=hs.p[k];for(const v of hs.villages){v.pid=p.id;v.tribe=p.tribe;S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id;p.vids.push(v.id)}
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
-    aiIndex();_pcacheFor=null;unstash(CO.uid)}
+    applyRelinks((await CO.db.ref(`worlds/${CO.wid}/relink`).get()).val());aiIndex();_pcacheFor=null;unstash(CO.uid)}
   if(!S.villages||!S.villages.length){showNet('Could not find your villages in this world. Reload the page to try again.');CO.role=null;return}
   await catchUp();advance(Date.now());render();showNet('');
-  CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.uid===CO.uid)return;
+  CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.sid===CO.sid)return;
     asHuman(a.uid,()=>{CO.headless=true;try{advance(Date.now())}finally{CO.headless=false}replay(a)});CO.ackOf[a.uid]=Math.max(CO.ackOf[a.uid]||0,a.k);publishHS()});
+  CO.db.ref(`worlds/${CO.wid}/relink`).on('child_added',d=>{applyRelinks({[d.key]:d.val()});d.ref.remove();publishHS()});
   CO.db.ref(`worlds/${CO.wid}/joins`).on('child_added',d=>{const j=d.val();d.ref.remove();if(!j||humanP(j.uid))return;
     newHuman(j.uid,j.name,j.tribe,j.quad,Date.now());publishHS();writeSnap().then(()=>CO.db.ref(`worlds/${CO.wid}/meta/humans/${j.uid}`).set(j.name))});
   writeSnap();
@@ -2235,8 +2236,8 @@ async function becomeHost(have){
 let _coT=0;
 async function coopBeat(){if(!CO.on)return;const now=Date.now();
   if(CO.role==='host'){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
-    if(l&&l.uid!==CO.uid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
-    await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,name:S.player,until:now+180000});
+    if(l&&l.sid!==CO.sid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
+    await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,sid:CO.sid,name:S.player,until:now+180000});
     humanTick(now);publishHS();if(now-CO.snapAt>10*60000)writeSnap()}
   else{const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();CO.hostName=l&&l.name||'';
     if(!l||l.until<now){if(await takeLease())await becomeHost()}
@@ -2246,13 +2247,41 @@ async function coopBeat(){if(!CO.on)return;const now=Date.now();
 function showNet(t){let d=document.getElementById('netov');if(!t){if(d)d.remove();return}if(!d){d=document.createElement('div');d.id='netov';d.style.cssText='position:fixed;inset:0;background:rgba(40,30,15,.55);display:flex;align-items:center;justify-content:center;z-index:999';document.body.appendChild(d)}
   d.innerHTML=`<div class="board" style="width:360px;text-align:center"><p style="margin:0">${t}</p></div>`}
 function coopBadge(){let b=document.getElementById('cobadge');if(!CO.on){if(b)b.remove();return}if(!b){b=document.createElement('div');b.id='cobadge';b.style.cssText='position:fixed;left:10px;bottom:10px;background:#fff8e6;border:2px solid #b08a4a;border-radius:8px;padding:4px 10px;font-size:12px;z-index:40';document.body.appendChild(b)}
-  b.innerHTML=CO.role==='host'?`Co-op · <b>you are hosting</b> · <a href="#" onclick="coopInvite();return false">invite</a>`:`Co-op · hosted by <b>${esc(CO.hostName||'?')}</b> · <a href="#" onclick="coopInvite();return false">invite</a>`}
+  b.innerHTML=CO.role==='host'?`Co-op · <b>you are hosting</b> · signed in as ${esc(CO.uid)} · <a href="#" onclick="coopInvite();return false">invite</a> · <a href="#" onclick="coopSignOut();return false">sign out</a>`:`Co-op · hosted by <b>${esc(CO.hostName||'?')}</b> · signed in as ${esc(CO.uid)} · <a href="#" onclick="coopInvite();return false">invite</a> · <a href="#" onclick="coopSignOut();return false">sign out</a>`}
 function coopInvite(){const url=location.origin+location.pathname+'?w='+CO.pub;openDlg('Invite friends',`<p>Send your friends this link. They choose a tribe and a quadrant, and start with the same beginner protection and tasks you had.</p><input type="text" readonly value="${url}" style="width:100%" onclick="this.select()"><p class="muted">They also need the world password. Send it separately (a different app, or tell them), not in the same message as the link.</p>`)}
 /* ---------- starting up ---------- */
 async function fbInit(){if(CO.db)return true;if(!FB_CONFIG)return false;
   const load=src=>new Promise((ok,no)=>{const s=document.createElement('script');s.crossOrigin='anonymous';s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)});
   const v='10.12.2';if(!window.firebase)await load(`https://www.gstatic.com/firebasejs/${v}/firebase-app-compat.js`);if(!firebase.database){await load(`https://www.gstatic.com/firebasejs/${v}/firebase-auth-compat.js`);await load(`https://www.gstatic.com/firebasejs/${v}/firebase-database-compat.js`)}
-  firebase.initializeApp(FB_CONFIG);const cred=await firebase.auth().signInAnonymously();CO.uid=cred.user.uid;CO.db=firebase.database();return true}
+  if(!firebase.apps.length)firebase.initializeApp(FB_CONFIG);CO.db=firebase.database();
+  const user=await new Promise(r=>{const off=firebase.auth().onAuthStateChanged(u=>{off();r(u)})});
+  if(user&&!user.isAnonymous&&user.email){CO.uid=user.email.split('@')[0];return true}
+  CO.anonUid=user&&user.isAnonymous?user.uid:null;   // an older anonymous player on this browser: linked to the username below
+  return await signInForm()}
+const slugU=u=>(u||'').trim().toLowerCase().replace(/[^a-z0-9_-]/g,'');
+function signInForm(err){return new Promise(res=>{CO._signRes=res;showNet('');
+  openDlg('Sign in to play together',`<p>Pick a username and password the first time; after that, sign in with them on any browser or device to get back to your villages. No email needed.</p>
+   <p class="bad" id="suerr">${err||''}</p>
+   <label class="f">Username</label><input type="text" id="su_name" maxlength="20" autocomplete="username">
+   <label class="f">Password (at least 6 characters)</label><input type="password" id="su_pw" maxlength="60" autocomplete="current-password" onkeydown="if(event.key==='Enter')doSignIn(false)">
+   <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" onclick="doSignIn(false)">Sign in</button><button class="btn grey" onclick="doSignIn(true)">Create account</button></div>
+   <p class="muted" style="font-size:12px">Forgot your password? Ask whoever runs the game to delete your account in Firebase, then create it again with the same username: your villages come back.</p>`);
+  const c=document.querySelector('#dlg .close');if(c)c.style.display='none'})}
+async function doSignIn(create){const u=slugU(document.getElementById('su_name').value),pw=document.getElementById('su_pw').value,er=document.getElementById('suerr');
+  if(u.length<3){er.textContent='Usernames need at least 3 letters or numbers.';return}if(pw.length<6){er.textContent='Passwords need at least 6 characters.';return}
+  const email=u+'@hearthwood.game';
+  try{if(create)await firebase.auth().createUserWithEmailAndPassword(email,pw);else await firebase.auth().signInWithEmailAndPassword(email,pw)}
+  catch(e){const c=e.code||'';er.textContent=c.includes('email-already-in-use')?'That username is taken. Try signing in instead.':
+    /invalid-credential|wrong-password|user-not-found|invalid-login/.test(c)?'Wrong username or password.':
+    c.includes('operation-not-allowed')?'Password sign-in is not switched on in Firebase yet (Authentication → Sign-in method → Email/Password).':
+    c.includes('too-many-requests')?'Too many tries. Wait a minute and try again.':(e.message||String(e));return}
+  CO.uid=u;const c=document.querySelector('#dlg .close');if(c)c.style.display='';closeDlg();if(CO.pub)showNet('Connecting to the world…');CO._signRes(true)}
+function coopSignOut(){firebase.auth().signOut().then(()=>location.reload())}
+// a player who joined before usernames existed is moved over to their username the first time they sign in
+async function coopRelink(meta){if(!CO.anonUid||!meta.humans||meta.humans[CO.uid]||!meta.humans[CO.anonUid])return meta;
+  const name=meta.humans[CO.anonUid];await CO.db.ref(`worlds/${CO.wid}/relink/${CO.anonUid}`).set(CO.uid);
+  await CO.db.ref(`worlds/${CO.wid}/meta/humans`).update({[CO.anonUid]:null,[CO.uid]:name});meta.humans[CO.uid]=name;delete meta.humans[CO.anonUid];return meta}
+function applyRelinks(rl){for(const old in rl||{}){const p=S.ai.players.find(x=>x.uid===old);if(p&&!S.ai.players.some(x=>x.uid===rl[old])){p.uid=rl[old];CO.ackOf[rl[old]]=CO.ackOf[old]||0}}}
 // the person who creates a co-op world becomes its first human and host
 async function coopCreate(pw){if(!await fbInit())return toast('Co-op needs the Firebase settings in the game file.');
   CO.on=true;CO.pub=Math.random().toString(36).slice(2,10);CO.wid=await worldKey(CO.pub,pw);try{localStorage.setItem('hw-pw-'+CO.pub,pw)}catch(e){}wrapActions();
@@ -2267,6 +2296,7 @@ async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the
   CO.wid=await worldKey(pub,pw);
   const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();if(!meta){showNet('');coopPwForm(pub,'That password does not open this world.');return true}
   try{localStorage.setItem('hw-pw-'+pub,pw)}catch(e){}
+  await coopRelink(meta);
   if(!meta.humans||!meta.humans[CO.uid]){showNet('');coopJoinForm(meta);return true}
   await coopEnter();return true}
 function coopPwForm(pub,err){openDlg('This world is password protected',`${err?`<p class="bad">${err}</p>`:''}<label class="f">World password</label><input type="password" id="wpw" maxlength="40" onkeydown="if(event.key==='Enter')coopPwGo('${pub}')">
@@ -2299,7 +2329,7 @@ async function coopEnter(){showNet('Loading the world…');
   finishEnter()}
 function finishEnter(){showNet('');document.querySelector('#dlg .close')&&(document.querySelector('#dlg .close').style.display='');closeDlg();render();coopBadge();
   if(!_coT)_coT=setInterval(coopBeat,10000);
-  window.addEventListener('pagehide',()=>{if(CO.role==='host'){CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,until:0});writeSnap()}})}
+  window.addEventListener('pagehide',()=>{if(CO.role==='host'){CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,sid:CO.sid,until:0});writeSnap()}})}
 
 /* ---------- world setup ---------- */
 // how likely each kind of player is to give up (scaled per world so 30-40% of everyone drops out)
