@@ -2164,7 +2164,7 @@ function newHuman(uid,name,tribe,quad,t){
   const sp=spawnSpot(quad||''),v=makeVillage('New village',sp.x,sp.y,layoutFor(3),true,t);v.pid=p.id;v.tribe=tribe;
   S.ai.vil[v.id]=v;S.ai.at[sp.x+','+sp.y]=v.id;p.vids.push(v.id);p.mapC={x:sp.x,y:sp.y};aiDerive(v);return p}
 /* ---------- orders: the host replays a friend's click with the inputs they had filled in ---------- */
-const ACT=['acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
+const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
 function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
@@ -2233,8 +2233,13 @@ async function becomeHost(have){
     newHuman(j.uid,j.name,j.tribe,j.quad,Date.now());publishHS();writeSnap().then(()=>CO.db.ref(`worlds/${CO.wid}/meta/humans/${j.uid}`).set(j.name))});
   writeSnap();
 }
+// after a speed change or rebuild the host saves at once and tells everyone to reload the world
+function worldChanged(){if(!CO.on||CO.role!=='host')return;writeSnap().then(()=>{CO.db.ref(`worlds/${CO.wid}/meta`).update({rev:Date.now(),speed:S.speed});publishHS()})}
 let _coT=0;
 async function coopBeat(){if(!CO.on)return;const now=Date.now();
+  const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();
+  if(!meta){CO.on=false;try{CO.db.ref(`worlds/${CO.wid}/lease`).onDisconnect().cancel()}catch(e){}showNet(`This world was deleted by its creator. <a href="${location.pathname}">Back to the start</a>`);return}
+  if(CO.role==='client'&&meta.rev&&meta.rev!==CO.rev){if(CO.rev){CO.snapAt=0}CO.rev=meta.rev}
   if(CO.role==='host'){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
     if(l&&l.sid!==CO.sid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
     await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,sid:CO.sid,name:S.player,until:now+180000});
@@ -2242,7 +2247,7 @@ async function coopBeat(){if(!CO.on)return;const now=Date.now();
   else{const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();CO.hostName=l&&l.name||'';
     if(!l||l.until<now){if(await takeLease())await becomeHost()}
     // refresh the wider world now and then
-    else if(now-CO.snapAt>10*60000){const sn=await readSnap();if(sn){CO.snapAt=now;const hs=CO.lastHS;S=sn.S;aiIndex();_pcacheFor=null;unstash(CO.uid);if(hs)mergeHS(hs);render()}}}
+    else if(now-CO.snapAt>10*60000){const sn=await readSnap();CO.rev=meta.rev;if(sn){CO.snapAt=now;const hs=CO.lastHS;S=sn.S;aiIndex();_pcacheFor=null;unstash(CO.uid);if(hs)mergeHS(hs);render()}}}
   coopBadge()}
 function showNet(t){let d=document.getElementById('netov');if(!t){if(d)d.remove();return}if(!d){d=document.createElement('div');d.id='netov';d.style.cssText='position:fixed;inset:0;background:rgba(40,30,15,.55);display:flex;align-items:center;justify-content:center;z-index:999';document.body.appendChild(d)}
   d.innerHTML=`<div class="board" style="width:360px;text-align:center"><p style="margin:0">${t}</p></div>`}
@@ -2286,7 +2291,7 @@ function applyRelinks(rl){for(const old in rl||{}){const p=S.ai.players.find(x=>
 async function coopCreate(pw){if(!await fbInit())return toast('Co-op needs the Firebase settings in the game file.');
   CO.on=true;CO.pub=Math.random().toString(36).slice(2,10);CO.wid=await worldKey(CO.pub,pw);try{localStorage.setItem('hw-pw-'+CO.pub,pw)}catch(e){}wrapActions();
   const pv=S.villages[0],p={id:'h_'+CO.uid,uid:CO.uid,name:S.player,tribe:S.tribe,human:true,active:true,joined:true,pers:'veteran',skill:1,vids:[],join:S.created,quit:Infinity};
-  S.ai.players.push(p);_pcacheFor=null;S.me=CO.uid;
+  S.ai.players.push(p);_pcacheFor=null;S.me=CO.uid;CO.owner=CO.uid;
   await CO.db.ref(`worlds/${CO.wid}/meta`).set({created:S.created,speed:S.speed,owner:CO.uid,humans:{[CO.uid]:S.player}});
   await takeLease();await becomeHost();history.replaceState(null,'','?w='+CO.pub);coopInvite()}
 async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the world…');
@@ -2296,7 +2301,7 @@ async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the
   CO.wid=await worldKey(pub,pw);
   const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();if(!meta){showNet('');coopPwForm(pub,'That password does not open this world.');return true}
   try{localStorage.setItem('hw-pw-'+pub,pw)}catch(e){}
-  await coopRelink(meta);
+  await coopRelink(meta);CO.owner=meta.owner;CO.rev=meta.rev;
   if(!meta.humans||!meta.humans[CO.uid]){showNet('');coopJoinForm(meta);return true}
   await coopEnter();return true}
 function coopPwForm(pub,err){openDlg('This world is password protected',`${err?`<p class="bad">${err}</p>`:''}<label class="f">World password</label><input type="password" id="wpw" maxlength="40" onkeydown="if(event.key==='Enter')coopPwGo('${pub}')">
@@ -3761,7 +3766,11 @@ function renameVillage(){openDlg('Rename village',`<input type="text" id="rn" ma
 function doRename(){const n=document.getElementById('rn').value.trim();if(n){V.name=n.slice(0,30);save()}closeDlg();render()}
 function toast(msg){let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';document.body.appendChild(t)}
   t.textContent=msg;t.className='show';clearTimeout(toast.h);toast.h=setTimeout(()=>t.className='',3000)}
+const isOwner=()=>!CO.on||CO.uid===CO.owner;
 function openSettings(){
+  if(!isOwner())return openDlg('Settings',`<label class="f">Player name</label><input type="text" id="pn" value="${esc(S.player)}">
+   <div class="note">Game speed and opponents are set by the world's creator, ${esc(CO.owner||'')}.</div>
+   <div style="margin-top:12px"><button class="btn" onclick="applySettings()">Save</button></div>`);
   openDlg('Settings',`<label class="f">Game speed</label>
    <select id="spd">${[1,2,3,5,10,100].map(v=>`<option value="${v}" ${S.speed===v?'selected':''}>×${v}${v===1?' (classic)':v===100?' (testing)':''}</option>`).join('')}</select>
    <div class="note">Speed multiplies production and divides build times. Work already in progress keeps its finish time.</div>
@@ -3772,10 +3781,22 @@ function openSettings(){
    <button class="btn grey" onclick="rebuildAI()">Rebuild opponents</button></div>
    <div class="note">Aggression sets the personality mix — Peaceful has mostly builders and casual players; Harsh has many raiders and veterans. Rebuilding replaces every opponent (your villages stay) and gives you a fresh beginner's protection.</div>
    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" onclick="applySettings()">Save</button>
-   <button class="btn grey" onclick="resetGame()">Start a new game…</button></div>`);
+   ${CO.on?`<button class="btn grey" style="background:#b23b2b;border-color:#8a2a1e;color:#fff" onclick="askDeleteWorld()">Delete this world…</button>`:`<button class="btn grey" onclick="resetGame()">Start a new game…</button>`}</div>
+   ${CO.on?'<div class="note">Changes here apply to everyone in this world.</div>':''}`);
 }
-function rebuildAI(){if(CO.on)return toast('Not available in a co-op world.');advance(Date.now());S.moves=S.moves.filter(m=>m.from);S.oases={};S.offers=null;aiSetup(+document.getElementById('oppn').value,document.getElementById('oppm').value);save();closeDlg();render();toast('Opponents rebuilt.')}
-function applySettings(){advance(Date.now());S.speed=+document.getElementById('spd').value;const pn=document.getElementById('pn').value.trim();if(pn)S.player=pn.slice(0,24);save();closeDlg();render()}
+function askDeleteWorld(){openDlg('Delete this world?',`<p>This deletes the whole world for everyone: every village, yours and your friends', and all the opponents. It can't be undone.</p><button class="btn" style="background:#b23b2b;border-color:#8a2a1e" onclick="deleteWorld()">Delete the world</button> <button class="btn grey" onclick="closeDlg()">Keep it</button>`)}
+async function deleteWorld(){if(!isOwner())return;CO.on=false;closeDlg();showNet('Deleting the world…');
+  try{CO.db.ref(`worlds/${CO.wid}/lease`).onDisconnect().cancel()}catch(e){}
+  await CO.db.ref(`worlds/${CO.wid}`).remove();try{localStorage.removeItem('hw-pw-'+CO.pub)}catch(e){}location.href=location.pathname}
+function rebuildAI(){if(CO.on){if(S.me!==CO.owner)return;if(CO.role!=='host'&&!CO.headless){closeDlg();return toast('Sent to the host: the opponents are being rebuilt.')}}
+  advance(Date.now());S.moves=S.moves.filter(m=>m.from);S.oases={};S.offers=null;
+  if(CO.on){// keep every human and their villages; only the computer players are replaced
+    const me=S.me;stash();const hum=S.ai.players.filter(p=>p.human),vs=hum.flatMap(p=>p.vids.map(id=>S.ai.vil[id]).filter(Boolean));
+    aiSetup(+document.getElementById('oppn').value,document.getElementById('oppm').value);
+    const t=Date.now();for(const p of hum){p.protEnd=p.prodEnd=t+72*3600000/S.speed;S.ai.players.push(p)}for(const v of vs){S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id}
+    aiIndex();_pcacheFor=null;unstash(me);worldChanged();save();closeDlg();return}
+  aiSetup(+document.getElementById('oppn').value,document.getElementById('oppm').value);save();closeDlg();render();toast('Opponents rebuilt.')}
+function applySettings(){advance(Date.now());const sp=document.getElementById('spd');if(sp&&(!CO.on||S.me===CO.owner)){S.speed=+sp.value;if(CO.on&&CO.role==='host')worldChanged()}const pn=document.getElementById('pn').value.trim();if(pn)S.player=pn.slice(0,24);save();closeDlg();render()}
 function resetGame(){openDlg('Start a new game?',`<p>This deletes your village and all progress.</p><button class="btn" style="background:#b23b2b;border-color:#8a2a1e" onclick="doReset()">Delete and start over</button> <button class="btn grey" onclick="closeDlg()">Cancel</button>`)}
 function doReset(){if(CO.on){location.href=location.pathname;return}try{localStorage.removeItem(SAVE_KEY)}catch(e){}_dirty=false;idbPut(SAVE_KEY,null).catch(()=>{});S=null;closeDlg();showStart()}
 function showStart(){
