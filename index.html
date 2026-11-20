@@ -2167,8 +2167,8 @@ function newHuman(uid,name,tribe,quad,t){
 const ACT=['acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
-function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:e.value,checked:e.checked}});
-  return {k:++CO.seq,uid:CO.uid,fn,args:JSON.parse(JSON.stringify(args)),inputs,radios,dk:dlgState&&dlgState.k||'',vid:V&&V.id}}
+function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
+  return {k:++CO.seq,uid:CO.uid,fn,args:JSON.parse(JSON.stringify(args)),inputs,radios,dk:dlgState&&dlgState.k||'',vid:V&&V.id||''}}
 function replay(a){const gid=document.getElementById.bind(document),qs=document.querySelector.bind(document),ds=dlgState;
   CO.headless=true;dlgState={k:a.dk};
   document.getElementById=id=>a.inputs[id]?{value:a.inputs[id].value,checked:a.inputs[id].checked,style:{}}:null;
@@ -2179,7 +2179,7 @@ function replay(a){const gid=document.getElementById.bind(document),qs=document.
 function wrapActions(){
   for(const n of ['render','toast','openDlg','closeDlg','openSlot','renderBar','renderTop','renderQueue','renderMap','renderSide','openQuest']){const f=window[n];if(typeof f!=='function'||f.__w)continue;const g=function(...a){if(CO.headless)return;return f.apply(this,a)};g.__w=1;window[n]=g}
 for(const n of ACT){const f=window[n];if(typeof f!=='function'||window['__'+n])continue;window['__'+n]=f;
-  window[n]=function(...args){if(CO.on&&CO.role==='client'&&!CO.headless){const a=capture(n,args);CO.pending.push(a);CO.db.ref(`worlds/${CO.wid}/act`).push(a)}return f.apply(this,args)}}}
+  window[n]=function(...args){if(CO.on&&CO.role==='client'&&!CO.headless){const a=capture(n,args);CO.pending.push(a);try{CO.db.ref(`worlds/${CO.wid}/act`).push(a)}catch(e){console.error('order not sent',n,e);toast('Could not send that order to the host: '+e.message)}}return f.apply(this,args)}}}
 /* ---------- packing the world for Firebase ---------- */
 async function gz(str){const cs=new CompressionStream('gzip'),w=cs.writable.getWriter();w.write(new TextEncoder().encode(str));w.close();
   const buf=new Uint8Array(await new Response(cs.readable).arrayBuffer());let s='';for(let i=0;i<buf.length;i+=32768)s+=String.fromCharCode.apply(null,buf.subarray(i,i+32768));return btoa(s)}
@@ -2250,7 +2250,7 @@ function coopBadge(){let b=document.getElementById('cobadge');if(!CO.on){if(b)b.
 function coopInvite(){const url=location.origin+location.pathname+'?w='+CO.pub;openDlg('Invite friends',`<p>Send your friends this link. They choose a tribe and a quadrant, and start with the same beginner protection and tasks you had.</p><input type="text" readonly value="${url}" style="width:100%" onclick="this.select()"><p class="muted">They also need the world password. Send it separately (a different app, or tell them), not in the same message as the link.</p>`)}
 /* ---------- starting up ---------- */
 async function fbInit(){if(CO.db)return true;if(!FB_CONFIG)return false;
-  const load=src=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+  const load=src=>new Promise((ok,no)=>{const s=document.createElement('script');s.crossOrigin='anonymous';s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)});
   const v='10.12.2';if(!window.firebase)await load(`https://www.gstatic.com/firebasejs/${v}/firebase-app-compat.js`);if(!firebase.database){await load(`https://www.gstatic.com/firebasejs/${v}/firebase-auth-compat.js`);await load(`https://www.gstatic.com/firebasejs/${v}/firebase-database-compat.js`)}
   firebase.initializeApp(FB_CONFIG);const cred=await firebase.auth().signInAnonymously();CO.uid=cred.user.uid;CO.db=firebase.database();return true}
 // the person who creates a co-op world becomes its first human and host
