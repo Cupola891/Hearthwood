@@ -2212,10 +2212,11 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- hosting ---------- */
 async function takeLease(){const r=CO.db.ref(`worlds/${CO.wid}/lease`);let won=false;
-  await r.transaction(l=>{if(l&&l.until>Date.now()&&l.uid!==CO.uid)return;won=true;return {uid:CO.uid,name:S&&S.player||'',until:Date.now()+30000}});return won}
-async function becomeHost(){
+  await r.transaction(l=>{if(l&&l.until>Date.now()&&l.uid!==CO.uid)return;won=true;return {uid:CO.uid,name:S&&S.player||'',until:Date.now()+180000}});
+  if(won)r.onDisconnect().set({uid:CO.uid,until:0});return won}
+async function becomeHost(have){
   CO.role='host';showNet('Taking over as host…');
-  const snap=await readSnap();if(snap){S=snap.S;const hsAll=(await CO.db.ref(`worlds/${CO.wid}/hs`).get()).val()||{};
+  const snap=have?null:await readSnap();if(snap){S=snap.S;const hsAll=(await CO.db.ref(`worlds/${CO.wid}/hs`).get()).val()||{};
     // fresher personal data from each human overrides the snapshot's copy
     for(const uid in hsAll){const hs=JSON.parse(hsAll[uid]),p=S.ai.players.find(x=>x.uid===uid);if(!p||hs.t<snap.meta.v)continue;
       for(const id of p.vids){const v=S.ai.vil[id];if(v)delete S.ai.at[v.x+','+v.y];delete S.ai.vil[id]}p.vids=[];
@@ -2223,6 +2224,7 @@ async function becomeHost(){
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
     aiIndex();_pcacheFor=null;unstash(CO.uid)}
+  if(!S.villages||!S.villages.length){showNet('Could not find your villages in this world. Reload the page to try again.');CO.role=null;return}
   await catchUp();advance(Date.now());render();showNet('');
   CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.uid===CO.uid)return;
     asHuman(a.uid,()=>{CO.headless=true;try{advance(Date.now())}finally{CO.headless=false}replay(a)});CO.ackOf[a.uid]=Math.max(CO.ackOf[a.uid]||0,a.k);publishHS()});
@@ -2232,7 +2234,9 @@ async function becomeHost(){
 }
 let _coT=0;
 async function coopBeat(){if(!CO.on)return;const now=Date.now();
-  if(CO.role==='host'){await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,name:S.player,until:now+30000});
+  if(CO.role==='host'){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
+    if(l&&l.uid!==CO.uid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
+    await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,name:S.player,until:now+180000});
     humanTick(now);publishHS();if(now-CO.snapAt>10*60000)writeSnap()}
   else{const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();CO.hostName=l&&l.name||'';
     if(!l||l.until<now){if(await takeLease())await becomeHost()}
@@ -2274,15 +2278,17 @@ function coopJoinForm(meta){openDlg('Join this world',`<p>A world at speed ×${m
   <label class="f">Start in</label><select id="jq"><option value="">A random quadrant</option><option value="++">North-east (+|+)</option><option value="+-">South-east (+|−)</option><option value="--">South-west (−|−)</option><option value="-+">North-west (−|+)</option></select>
   <div style="margin-top:12px"><button class="btn" onclick="coopJoin()">Join</button></div>`)}
 async function coopJoin(){const name=(document.getElementById('jn').value||'').trim()||'Friend';
-  await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).set({uid:CO.uid,name,tribe:document.getElementById('jt').value,quad:document.getElementById('jq').value,t:Date.now()});
+  CO.join={uid:CO.uid,name,tribe:document.getElementById('jt').value,quad:document.getElementById('jq').value,t:Date.now()};
+  await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).set(CO.join);
   closeDlg();showNet('Joining… waiting for the host');
   // nobody hosting? then this browser hosts and lets itself in
   const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();if(!l||l.until<Date.now()){await takeLease();await becomeHostFresh();return}
   CO.db.ref(`worlds/${CO.wid}/meta/humans/${CO.uid}`).on('value',async d=>{if(d.val()&&!S){await coopEnter()}})}
-async function becomeHostFresh(){const snap=await readSnap();S=snap.S;aiIndex();_pcacheFor=null;S.me=null;
-  const j=(await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).get()).val();
+async function becomeHostFresh(){CO.role='host';const snap=await readSnap();S=snap.S;aiIndex();_pcacheFor=null;S.me=null;
+  const j=(await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).get()).val()||CO.join;
   if(j&&!humanP(CO.uid)){newHuman(CO.uid,j.name,j.tribe,j.quad,Date.now());await CO.db.ref(`worlds/${CO.wid}/meta/humans/${CO.uid}`).set(j.name);await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).remove()}
-  unstash(CO.uid);await writeSnap();await becomeHost()}
+  unstash(CO.uid);await writeSnap();await becomeHost(true)}
+
 async function coopEnter(){showNet('Loading the world…');
   const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
   if(!l||l.until<Date.now()){if(await takeLease()){await becomeHost();finishEnter();return}}
@@ -3767,7 +3773,7 @@ function beginGame(){
 }
 
 /* ---------- main loop ---------- */
-function tick(){
+function tick(){if(!S||!V||!S.villages||!S.villages.length)return;
   if(!S)return;
   const changed=advance(Date.now());
   const typing=document.activeElement&&['INPUT','SELECT'].includes(document.activeElement.tagName);
