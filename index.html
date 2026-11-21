@@ -1650,7 +1650,7 @@ function inviteToAlly(pid){const p=aiP(pid),a=myAlly();if(!p||!a||!canA('invite'
   if(p.human){const from=meName(),id=S.ally;asHuman(p.uid,()=>addMsg(from,`${esc(from)} invites you to join ${esc(allyName(id))}.`,{invite:id}));save();closeDlg();if(view==='ally')render();return toast(`Invitation sent to ${p.name}.`)}
   S.invites=S.invites||[];if(S.invites.some(i=>i.pid===pid))return toast('You already invited them.');
   S.invites.push({pid,t:Date.now()+(0.5+Math.random()*5.5)*3600000/Math.max(1,S.speed/3)});save();closeDlg();if(view==='ally')render();toast(`Invitation sent to ${p.name}.`)}
-function aiInviteReplies(now){if(!S.invites||!S.invites.length)return;
+function aiInviteReplies(now){aiDmReplies(now);if(!S.invites||!S.invites.length)return;
   for(const inv of [...S.invites]){if(inv.t>now)continue;S.invites=S.invites.filter(x=>x!==inv);const p=aiP(inv.pid);if(!p||!p.vids.length||!S.ally)continue;
     const v=S.ai.vil[p.vids[0]],d=dist(v,capVil()),base={casual:.7,builder:.6,expander:.55,defender:.6,raider:.4,veteran:.35}[p.pers]||.5;
     let ch=base*(p.ally?.25:1)*Math.max(.2,1-d/30)*((p.angry||0)>0?.3:1);
@@ -1791,6 +1791,7 @@ function tileInfo(x,y){
     h+=`<p><b>${esc(av.name)}</b> belongs to <b>${esc(p.name)}</b> (${TRIBES[p.tribe].n}${p.ally?`, ${esc(allyName(p.ally))}`:''})${p.active?'':' — <i>looks inactive</i>'}.</p><p>Population ${aiPop(av)} · player has ${p.vids.length} village(s).</p>`;
     if(av.loy<100)h+=`<p>Loyalty: <b>${Math.floor(av.loy)}%</b></p>`;
     if(S.ally&&canA('invite')&&p.ally!==S.ally)h+=`<p><button class="btn grey" onclick="inviteToAlly('${p.id}')">Invite to your alliance</button></p>`;
+    h+=`<p><a href="#" onclick="writeDlg('${p.id}');return false">Write a message to ${esc(p.name)}</a></p>`;
     if(S.ally&&p.ally===S.ally)h+='<p>This player is in your alliance.</p>';
     else h+=`<button class="btn" onclick="sendDialog(${x},${y},'raid')">Raid</button> <button class="btn" onclick="sendDialog(${x},${y},'attack')">Attack</button> <button class="btn grey" onclick="sendDialog(${x},${y},'scout')">Scout</button>`;
     openDlg(esc(av.name),h);return}
@@ -2153,7 +2154,7 @@ function spawnSpot(q){const R=rng(Math.floor(Math.random()*1e9)),settled=S.ai?Ob
    ===================================================================== */
 const FB_CONFIG=window.__FB_CONFIG||{apiKey:"AIzaSyCXrBGCG6y4k4G5YsDdRyByWZh0qXpJ_n0",authDomain:"hearthwood-c9840.firebaseapp.com",databaseURL:"https://hearthwood-c9840-default-rtdb.firebaseio.com",projectId:"hearthwood-c9840",storageBucket:"hearthwood-c9840.firebasestorage.app",messagingSenderId:"936840765328",appId:"1:936840765328:web:db68cbf697848c68201d15"};   // replace null with your config; paste your Firebase web app config object here, e.g. {apiKey:"...",authDomain:"...",databaseURL:"...",projectId:"...",appId:"..."}
 // what belongs to each human rather than to the world
-const HK=['ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
+const HK=['sent','dmq','ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
 const LOCAL_HK=['mapC','mapZ','pageSel','cur'];
 async function worldKey(pub,pw){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pub+':'+pw));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')}
 const CO={sid:Math.random().toString(36).slice(2),pub:null,on:false,role:null,uid:null,wid:null,db:null,pending:[],seq:0,ackOf:{},headless:false,snapAt:0,lastHS:null,hostName:''};
@@ -2181,7 +2182,7 @@ function newHuman(uid,name,tribe,quad,t){
   const sp=spawnSpot(quad||''),v=makeVillage('New village',sp.x,sp.y,layoutFor(3),true,t);v.pid=p.id;v.tribe=tribe;
   S.ai.vil[v.id]=v;S.ai.at[sp.x+','+sp.y]=v.id;p.vids.push(v.id);p.mapC={x:sp.x,y:sp.y};aiDerive(v);return p}
 /* ---------- orders: the host replays a friend's click with the inputs they had filled in ---------- */
-const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
+const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','sendDM','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
 function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
@@ -3202,12 +3203,41 @@ function pageReports(sel){
   return `<div class="board"><h2 style="margin:0 0 8px">Reports</h2>${L.length?`<table class="lv rep">${L.map(r=>`<tr style="cursor:pointer;${r.read?'':'font-weight:bold'}" onclick="openPage('rep',${r.id})"><td style="width:16px"><span class="dot ${r.kind}"></span></td><td style="text-align:left">${r.title}</td><td>${new Date(r.t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td></tr>`).join('')}</table>`:'<p class="muted">No reports yet.</p>'}
    ${L.length?'<p><a href="#" onclick="S.reports.forEach(r=>r.read=true);save();openPage(\'rep\');return false">Mark all as read</a> · <a href="#" onclick="S.reports=[];save();openPage(\'rep\');return false">Delete all</a></p>':''}</div>`;
 }
+let msgTab='in';
 function pageMessages(){
-  const L=S.msgs||[];L.forEach(m=>m.read=true);save();
-  return `<div class="board"><h2 style="margin:0 0 8px">Messages</h2>${L.length?L.map(m=>`<div class="bopt"><div class="nm">${esc(m.from)} <span class="muted" style="font-weight:normal;font-size:12px">${new Date(m.t).toLocaleString()}</span></div><div>${m.text}</div>
-    ${m.extra&&m.extra.invite&&!S.ally?`<button class="btn" onclick="joinAlliance('${m.extra.invite}')">Join ${esc(allyName(m.extra.invite))}</button>`:''}</div>`).join(''):'<p class="muted">No messages yet.</p>'}
+  const L=S.msgs||[];if(msgTab==='in'){L.forEach(m=>m.read=true);save()}
+  const tabs=`<div class="tabs" style="margin-bottom:10px;display:flex;gap:6px;align-items:center"><button class="${msgTab==='in'?'on':''}" onclick="msgTab='in';render()">Inbox</button><button class="${msgTab==='out'?'on':''}" onclick="msgTab='out';render()">Sent</button><span style="flex:1"></span><button class="btn" onclick="writeDlg()">Write a message</button></div>`;
+  const list=msgTab==='out'?((S.sent||[]).length?(S.sent||[]).map(m=>`<div class="bopt"><div class="nm">To ${esc(m.to)} <span class="muted" style="font-weight:normal;font-size:12px">${new Date(m.t).toLocaleString()}</span></div><div style="white-space:pre-wrap">${esc(m.text)}</div></div>`).join(''):'<p class="muted">You haven\'t sent any messages.</p>')
+   :(L.length?L.map(m=>`<div class="bopt"><div class="nm">${esc(m.from)} <span class="muted" style="font-weight:normal;font-size:12px">${new Date(m.t).toLocaleString()}</span></div><div style="white-space:pre-wrap">${m.text}</div>
+    ${m.extra&&m.extra.invite&&!S.ally?`<button class="btn" onclick="joinAlliance('${m.extra.invite}')">Join ${esc(allyName(m.extra.invite))}</button> `:''}${m.extra&&m.extra.dm&&aiP(m.extra.dm)?`<button class="btn grey" onclick="writeDlg('${m.extra.dm}')">Reply</button>`:''}</div>`).join(''):'<p class="muted">No messages yet.</p>');
+  return `<div class="board"><h2 style="margin:0 0 8px">Messages</h2>${tabs}<div style="max-height:calc(100vh - 250px);overflow:auto">${list}</div>
    ${S.ally?`<p>You are a member of <b><a href="#" onclick="setView('ally');return false">${esc(allyName(S.ally))}</a></b>. Its members won't attack you. <a href="#" onclick="setView('ally');return false">Manage or leave the alliance</a></p>`:''}</div>`;
 }
+/* ---------- direct messages: friends get them in their inbox; computer players read them and may answer ---------- */
+function writeDlg(pid){const p=pid&&aiP(pid);openDlg('Write a message',`<label class="f">To (player name)</label><input type="text" id="dmto" maxlength="30" value="${p?esc(p.name):''}">
+  <label class="f">Message</label><textarea id="dmtext" rows="6" maxlength="1000" style="width:100%"></textarea>
+  <div style="margin-top:10px"><button class="btn" onclick="sendDM()">Send</button></div>`);setTimeout(()=>{const e=document.getElementById(p?'dmtext':'dmto');if(e)e.focus()},0)}
+function sendDM(){const to=(document.getElementById('dmto').value||'').trim().toLowerCase(),text=(document.getElementById('dmtext').value||'').trim().slice(0,1000);
+  if(!to)return toast('Who is it for?');if(!text)return toast('Write something first.');
+  const p=S.ai.players.find(x=>!x.nat&&x.joined&&x.name.toLowerCase()===to&&x.id!==myPid());if(!p)return toast('No player by that name.');
+  S.sent=S.sent||[];S.sent.unshift({t:Date.now(),to:p.name,text});if(S.sent.length>100)S.sent.length=100;
+  if(p.human){const from=meName(),me=myPid();asHuman(p.uid,()=>addMsg(from,esc(text),{dm:me}))}
+  else if(p.active){S.dmq=S.dmq||[];const hrs=(PERS[p.pers].eff>=1?.3:1)+Math.random()*(p.pers==='casual'?14:6);S.dmq.push({pid:p.id,t:Date.now()+hrs*3600000,text:text.slice(0,300)})}
+  save();closeDlg();msgTab='out';if(view==='msg')render();toast(`Message sent to ${p.name}.`)}
+function aiDmReplies(now){if(!S.dmq||!S.dmq.length)return;
+  for(const q of [...S.dmq]){if(q.t>now)continue;S.dmq=S.dmq.filter(x=>x!==q);const p=aiP(q.pid);if(!p||!p.active||!p.vids.length)continue;
+    const r=aiDmText(p,q.text);if(r)addMsg(p.name,esc(r),{dm:p.id})}}
+function aiDmText(p,text){const t=text.toLowerCase(),R=Math.random(),P=PERS[p.pers],pick=a=>a[Math.floor(Math.random()*a.length)];
+  if(R<(p.pers==='casual'?.45:.2))return null; // not everyone answers
+  const angry=(p.angry||0)>0,myA=S.ally&&p.ally===S.ally;
+  if(/peace|nap|stop|leave me|truce|don'?t attack|no attack/.test(t))
+    return angry?pick(['You started this. Maybe when you stop hitting me.','Funny, coming from you.','Talk is cheap. Show me with your rally point.'])
+      :P.raid>.3?pick(['I farm whoever is closest. Get some troops and I\'ll look elsewhere.','No promises. Build a wall and we\'ll see.','Sure, for now. Don\'t make me regret it.'])
+      :pick(['Fine by me, I\'m just building.','Agreed. Plenty of room for both of us.','No interest in fighting you. Good luck out there.']);
+  if(/allian|join|ally|invite/.test(t))return p.ally&&!myA?pick([`I'm with ${allyName(p.ally)}, sorry.`,`Already in ${allyName(p.ally)}. Ask our leader if you want in.`]):pick(['Maybe. Send an invite and I\'ll think about it.','I\'d consider it if you\'re close by.','Not looking right now, thanks.']);
+  if(/trade|res|crop|wood|clay|iron|market/.test(t))return pick(['Check the market, I post offers when I can.','I\'m short on crop myself.','Put an offer up and I might take it.']);
+  if(/help|attack|incoming|def/.test(t))return myA?pick(['Sending what I can.','I\'m offline soon, but I\'ll send some defence.','Hang in there, troops on the way if I can spare them.']):pick(['Not my fight.','Good luck with that.','Join our alliance and we\'ll talk.']);
+  return pick(['Hi! Good luck out there.','Hey neighbour.','Who are you again?','Hello. Busy building, talk later.','lol ok','gl hf','Hey, what\'s up?'])}
 const ALLY_A=['Iron','Red','Silver','Golden','Stone','Night','Grey','River','Old','Copper','Amber','Hollow','Black','Sun','Moon','Storm','Ash','Oak','Frost','Ember','High','Deep','Wild','White'],ALLY_B=['Oaks','Hearth','Ford','Crown','Circle','Owls','Wolves','Pact','Guard','Hill','Field','Pines','Mill','Banner','Shield','Legion','Tower','Gate','Hounds','Ravens','Keep','Vale','Watch','Brothers'];
 function allyNew(x,y,lead){const A=S.ai,i=A.alli.length,n=i<ALLY.length?ALLY[i]:`${ALLY_A[i%ALLY_A.length]} ${ALLY_B[Math.floor(i/ALLY_A.length)%ALLY_B.length]}${i>=ALLY_A.length*ALLY_B.length?' '+(Math.floor(i/(ALLY_A.length*ALLY_B.length))+1):''}`;const al={id:'al'+i,name:n,x,y,members:1,lead:lead||null};A.alli.push(al);return al}
 // room in an alliance: 3 members per level of the leader's highest Embassy, for everyone
