@@ -75,7 +75,7 @@ h3{margin:0 0 6px;font-size:14px}
 #left{grid-area:left}#main>section{grid-area:stage;min-width:0}#rightcol{grid-area:right}
 #stage{height:calc(100vh - 150px);max-height:860px;min-height:300px}
 #main>section{position:relative}
-#queue{position:absolute;left:0;bottom:-30px;margin:0;padding:3px 10px 4px;width:max-content;max-width:100%;z-index:5;opacity:.97}#queue h3{margin:0;font-size:13px}#queue table{width:auto}#queue td{white-space:nowrap}
+#queue{position:absolute;left:50%;transform:translateX(-50%);bottom:-30px;margin:0;padding:3px 10px 4px;width:max-content;max-width:100%;z-index:5;opacity:.97}#queue h3{margin:0;font-size:13px}#queue table{width:auto}#queue td{white-space:nowrap}
 #left,#rightcol{max-height:calc(100vh - 118px);overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#b99b66 transparent;padding-right:4px;overscroll-behavior:contain}
 @media (min-width:700px){body{overflow:hidden}#main{padding:8px 12px 0}}
 #stage .spot{cursor:pointer}
@@ -128,6 +128,7 @@ table.rep td{padding:5px 6px}
 .tabs button{color:#3d2f1e;border:1px solid var(--line);background:var(--paper-2);border-radius:4px 4px 0 0;padding:4px 10px}
 .tabs button.on{background:#fff;font-weight:bold;color:#3d2f1e}
 .navbtn.qhl{z-index:25}
+.navbtn.betabtn{width:52px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;margin-left:8px}.navbtn.betabtn b{font-size:12px;letter-spacing:.5px;color:#7a2f1e}.navbtn.betabtn .bv{font-size:10px;color:#5a4a30}.navbtn.betabtn.qhl::after{border-radius:24px}
 .navbtn.small{width:40px;height:40px;align-self:center;border-width:3px}.navbtn.small svg{width:30px;height:30px}.navbtn.sep{margin-left:22px}
 .navbtn.qhl::after{content:'';position:absolute;inset:-7px;border:3px solid #d0352b;border-radius:50%;animation:qring 1.2s ease-in-out infinite;pointer-events:none}
 @keyframes qring{50%{transform:scale(1.1);opacity:.6}}
@@ -178,6 +179,7 @@ select,input[type=text],option{font:inherit;padding:4px 6px;border:1px solid var
 #left .btn,#rightcol .btn{padding:3px 9px;font-size:12px}
 #left svg,#rightcol svg{max-height:15px}
 @media (max-width:1100px) and (min-width:700px){#main{grid-template-columns:minmax(0,1fr) 190px}}
+@media (max-width:699px){#main{grid-template-columns:minmax(0,1fr)}#stage{height:62vh}}
 /* testing controls: invisible and unclickable unless dev mode is on */
 body:not(.devon) .dev,body:not(.devon) [data-dev]{display:none!important;pointer-events:none!important}
 </style>
@@ -373,6 +375,7 @@ function load(){
     // units already owned count as researched (older saves skipped research for some)
     S.villages.forEach(v=>{for(const u in v.troops)if(v.troops[u]>0&&!v.research.includes(+u))v.research.push(+u)});
     if(!S.ai)aiSetup(150,'normal');
+    fixQuit(S);aiRequitOnce();
     if(!S.prodEnd)S.prodEnd=S.protEnd||S.created+72*3600000;else{aiIndex();if(!S.ai.ver){const n=Date.now();S.ai.players.forEach(p=>{if(!p.joined&&Math.random()<.7)p.join=n-1});S.ai.ver=2}}
     if(S.ai.ver<3)aiMigrate();}
 }
@@ -900,7 +903,9 @@ function renderSide(){
        <div style="display:flex;flex-direction:column;gap:3px;align-items:center"><span class="muted" style="font-size:11px">Zoom</span><button class="mb" onclick="mapZoom(-1)" title="Zoom in">+</button><button class="mb" onclick="mapZoom(1)" title="Zoom out">−</button></div>
       </div>
       <div style="display:flex;gap:3px;align-items:center">x <input id="mx" type="text" value="${S.mapC.x}" style="width:38px;padding:1px 3px"> y <input id="my" type="text" value="${S.mapC.y}" style="width:38px;padding:1px 3px"> <button class="mb" style="width:auto;padding:0 6px" onclick="mapJump()">Go</button></div>
-      <div class="note" style="font-size:11px;margin-top:4px">Drag to move, mouse wheel to zoom, click a tile for details.</div></div>`;
+      <div style="display:flex;gap:3px;align-items:center;margin-top:5px"><input id="msq" type="text" placeholder="Player, village or x|y" style="flex:1;min-width:0;padding:1px 4px" onkeydown="if(event.key==='Enter')mapSearch()"> <button class="mb" style="width:auto;padding:0 6px" onclick="mapSearch()">Find</button></div>
+      ${MAGN.s>1.01?`<div style="margin-top:5px"><button class="mb" style="width:auto;padding:0 6px" onclick="magReset();renderSide()">Undo pinch zoom</button></div>`:''}
+      <div class="note" style="font-size:11px;margin-top:4px">Drag to move, mouse wheel to zoom, click a tile for details. On a phone, pinch to magnify.</div></div>`;
   if(view==='res')h+=`<div class="board"><h3>Production per hour:</h3>
    ${RES.map((n,i)=>`<div class="kv" style="white-space:nowrap;gap:6px;align-items:center"><span style="display:flex;gap:6px;align-items:center">${ICON[i]}${n}:</span><b>${fmt(r[i])}</b></div>`).join('')}</div>`;
   const home=U.map((x,u)=>[u,V.troops[u]||0]).filter(([u,n])=>n>0);
@@ -1728,8 +1733,8 @@ function renderMap(){
     const tl=tileAt(t.x,t.y),cx=t.px+TW/2,cy=t.py+TH/2,R=tileRng(t.x,t.y,1);
     const vil=villageAt(t.x,t.y),moving=S.moves.find(m=>m.type==='settle'&&m.x===t.x&&m.y===t.y),av=aiAt(t.x,t.y);
     if(av){const p=aiP(av.pid),al=p.nat?-2:p.ally?S.ai.alli.findIndex(a=>a.id===p.ally):-1,col=al===-2?'#5b2a86':al<0?'#a48a5a':['#c0392b','#2e6da4','#d4a017','#7a2e8a','#2e8a5a','#d35400','#16a085','#8e44ad','#c0392b','#2c3e50'][al%10],sc=Math.min(1.5,.9+aiPop(av)/600);
-      if(vw.far){s+=`<rect x="${cx-16*sc}" y="${cy-12*sc}" width="${32*sc}" height="${24*sc}" rx="5" fill="${p.active?'#e3b33a':'#b8b2a0'}" stroke="${S.ally&&p.ally===S.ally?'#2e8a5a':col}" stroke-width="5"/>`;continue}
-      s+=`<g transform="translate(${cx} ${cy+2}) scale(${sc}) translate(${-cx} ${-cy-2})" ${p.active?'':'opacity=".7"'}>${mapVillage(cx,cy+2,false,S.ally&&p.ally===S.ally?'#2e8a5a':col)}</g><g filter="url(#sh)"><rect x="${cx-56}" y="${t.py+TH-22}" width="112" height="20" rx="4" fill="${p.active?'#fdf4d6':'#e4ddc8'}" stroke="${INK}" stroke-width="1"/></g><text x="${cx}" y="${t.py+TH-7}" text-anchor="middle" font-size="13" font-family="Georgia,serif" fill="${INK}">${esc(p.name.slice(0,16))}</text>`;continue}
+      if(vw.far){s+=`<rect x="${cx-16*sc}" y="${cy-12*sc}" width="${32*sc}" height="${24*sc}" rx="5" fill="${!looksInactive(p)?'#e3b33a':'#b8b2a0'}" stroke="${S.ally&&p.ally===S.ally?'#2e8a5a':col}" stroke-width="5"/>`;continue}
+      s+=`<g transform="translate(${cx} ${cy+2}) scale(${sc}) translate(${-cx} ${-cy-2})" ${!looksInactive(p)?'':'opacity=".7"'}>${mapVillage(cx,cy+2,false,S.ally&&p.ally===S.ally?'#2e8a5a':col)}</g><g filter="url(#sh)"><rect x="${cx-56}" y="${t.py+TH-22}" width="112" height="20" rx="4" fill="${!looksInactive(p)?'#fdf4d6':'#e4ddc8'}" stroke="${INK}" stroke-width="1"/></g><text x="${cx}" y="${t.py+TH-7}" text-anchor="middle" font-size="13" font-family="Georgia,serif" fill="${INK}">${esc(p.name.slice(0,16))}</text>`;continue}
     const own=S.oases&&S.oases[t.x+','+t.y]&&S.oases[t.x+','+t.y].owner;
     if(own)s+=flag(t.px+18,t.py+TH-8,46,'#d9822b');
     const attacking=S.moves.find(m=>(m.type==='attack'||m.type==='raid'||m.type==='scout')&&m.x===t.x&&m.y===t.y&&m.from);
@@ -1789,7 +1794,7 @@ function tileInfo(x,y){
     if(!wwLocked(av))h+=`<button class="btn" onclick="sendDialog(${x},${y},'attack')">Attack</button> <button class="btn grey" onclick="sendDialog(${x},${y},'scout')">Scout</button>`;
     openDlg('Natars',h);return}
   if(av){const p=aiP(av.pid);
-    h+=`<p><b>${esc(av.name)}</b> belongs to <b>${esc(p.name)}</b> (${TRIBES[p.tribe].n}${p.ally?`, ${esc(allyName(p.ally))}`:''})${p.active?'':' — <i>looks inactive</i>'}.</p><p>Population ${aiPop(av)} · player has ${p.vids.length} village(s).</p>`;
+    h+=`<p><b>${esc(av.name)}</b> belongs to <b>${esc(p.name)}</b> (${TRIBES[p.tribe].n}${p.ally?`, ${esc(allyName(p.ally))}`:''})${!looksInactive(p)?'':' — <i>looks inactive</i>'}.</p><p>Population ${aiPop(av)} · player has ${p.vids.length} village(s).</p>`;
     if(av.loy<100)h+=`<p>Loyalty: <b>${Math.floor(av.loy)}%</b></p>`;
     if(S.ally&&canA('invite')&&p.ally!==S.ally)h+=`<p><button class="btn grey" onclick="inviteToAlly('${p.id}')">Invite to your alliance</button></p>`;
     h+=`<p><a href="#" onclick="writeDlg('${p.id}');return false">Write a message to ${esc(p.name)}</a></p>`;
@@ -1813,18 +1818,51 @@ function tileInfo(x,y){
   openDlg('Empty valley',h);
 }
 const LAYOUTS_OF=v=>{const c=[0,0,0,0];v.layout.forEach(t=>c[t]++);const k=Object.keys(LAYOUTS).find(k=>LAYOUTS[k].join()===c.join());return +k||3};
+// find a player, a village or a spot on the map
+function mapSearch(){const e=document.getElementById('msq'),t=(e&&e.value||'').trim();if(!t)return;
+  const c=/^\(?\s*(-?\d+)\s*[|,\s]\s*(-?\d+)\s*\)?$/.exec(t);if(c){mapShow(+c[1],+c[2]);return}
+  const q=t.toLowerCase(),out=[];
+  for(const p of S.ai.players){if(p.nat||!p.vids.length||!p.name.toLowerCase().includes(q))continue;for(const id of p.vids){const v=S.ai.vil[id];if(v)out.push({v,who:p.name,exact:p.name.toLowerCase()===q})}}
+  for(const v of S.villages)if(v.name.toLowerCase().includes(q)||S.player.toLowerCase().includes(q))out.push({v,who:S.player,exact:v.name.toLowerCase()===q});
+  for(const id in S.ai.vil){const v=S.ai.vil[id];if(v.name.toLowerCase().includes(q)&&!out.some(o=>o.v===v)){const p=aiP(v.pid);out.push({v,who:p?p.name:'',exact:v.name.toLowerCase()===q})}}
+  if(!out.length)return toast('Nothing on the map matches that.');
+  out.sort((a,b)=>b.exact-a.exact);if(out.length===1){mapShow(out[0].v.x,out[0].v.y);return}
+  openDlg(`Found ${out.length>40?'more than 40':out.length}`,`<table class="lv" style="width:100%">${out.slice(0,40).map(o=>`<tr><td style="text-align:left">${esc(o.v.name)}</td><td style="text-align:left">${esc(o.who)}</td><td>(${o.v.x}|${o.v.y})</td><td><a href="#" onclick="closeDlg();mapShow(${o.v.x},${o.v.y});return false">Show</a></td></tr>`).join('')}</table>`)}
+function mapShow(x,y){S.mapC={x:wrapC(x),y:wrapC(y)};if(view!=='map')setView('map');else{renderMap();renderSide()}setTimeout(()=>tileInfo(wrapC(x),wrapC(y)),50)}
 function mapGo(dx,dy){S.mapC.x=wrapC(S.mapC.x+dx);S.mapC.y=wrapC(S.mapC.y+dy);renderMap()}
 function mapJump(){const x=parseInt(document.getElementById('mx').value),y=parseInt(document.getElementById('my').value);if(!isNaN(x)&&!isNaN(y)){S.mapC={x:wrapC(x),y:wrapC(y)};if(0)S.mapC={x:Math.max(-WORLD_R,Math.min(WORLD_R,x)),y:Math.max(-WORLD_R,Math.min(WORLD_R,y))};renderMap()}}
+/* ---------- pinch to magnify the map on a phone (separate from the map's own zoom levels) ---------- */
+let MAGN={s:1,x:0,y:0};
+function magApply(){const st=document.getElementById('stage');if(!st)return;const m=MAGN;
+  if(m.s<=1.01){st.style.transform='';st.style.clipPath='';return}
+  const W=st.clientWidth,H=st.clientHeight;st.style.transformOrigin='0 0';st.style.transform=`translate(${m.x}px,${m.y}px) scale(${m.s})`;
+  // keep the magnified map inside its own box
+  st.style.clipPath=`inset(${-m.y/m.s}px ${W-(W-m.x)/m.s}px ${H-(H-m.y)/m.s}px ${-m.x/m.s}px)`}
+function magReset(){MAGN={s:1,x:0,y:0};magApply()}
+function magClamp(){const st=document.getElementById('stage'),W=st.clientWidth,H=st.clientHeight,m=MAGN;m.s=Math.max(1,Math.min(4,m.s));m.x=Math.min(0,Math.max(W-W*m.s,m.x));m.y=Math.min(0,Math.max(H-H*m.s,m.y))}
+(function initPinch(){const st=document.getElementById('stage');st.style.touchAction='none';
+  // a tap on the map opens the tile on lift; stop the phone's follow-up click from landing on the dialog's backdrop and closing it
+  st.addEventListener('touchend',e=>{if(view==='map'&&e.cancelable)e.preventDefault()},{passive:false});const pts=new Map();let base=null,pan=null;
+  const box=()=>st.parentElement.getBoundingClientRect();
+  st.addEventListener('pointerdown',e=>{if(view!=='map'||e.pointerType!=='touch')return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===2){const [a,b]=[...pts.values()],r=box();base={d:Math.hypot(a.x-b.x,a.y-b.y)||1,s:MAGN.s,lx:((a.x+b.x)/2-r.left-MAGN.x)/MAGN.s,ly:((a.y+b.y)/2-r.top-MAGN.y)/MAGN.s};pan=null;if(mapDrag){mapDrag.mag=true;mapDrag.moved=true}}
+    else if(pts.size===1&&MAGN.s>1.01){pan={x:e.clientX,y:e.clientY,ox:MAGN.x,oy:MAGN.y};if(mapDrag)mapDrag.mag=true}});
+  window.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(base&&pts.size>=2){const [a,b]=[...pts.values()],r=box(),mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;MAGN.s=base.s*Math.hypot(a.x-b.x,a.y-b.y)/base.d;MAGN.s=Math.max(1,Math.min(4,MAGN.s));MAGN.x=mx-MAGN.s*base.lx;MAGN.y=my-MAGN.s*base.ly;magClamp();magApply()}
+    else if(pan){MAGN.x=pan.ox+(e.clientX-pan.x);MAGN.y=pan.oy+(e.clientY-pan.y);magClamp();magApply()}});
+  const up=e=>{if(!pts.has(e.pointerId))return;pts.delete(e.pointerId);if(pts.size<2&&base){base=null;renderSide()}if(!pts.size)pan=null};
+  window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+  window.addEventListener('resize',()=>{if(MAGN.s>1.01){magClamp();magApply()}})})();
 (function initMapDrag(){
   const svg=document.getElementById('stage');
   svg.addEventListener('wheel',e=>{if(view!=='map')return;e.preventDefault();mapZoom(e.deltaY>0?1:-1)},{passive:false});
   window.addEventListener('resize',()=>{if(view==='map')renderMap()});
-  svg.addEventListener('pointerdown',e=>{if(view!=='map'||e.button!==0)return;mapDrag={sx:e.clientX,sy:e.clientY,start:svgPt(e),c:{...S.mapC},moved:false}});
+  svg.addEventListener('pointerdown',e=>{if(view!=='map'||e.button!==0)return;if(mapDrag&&e.pointerType==='touch'){mapDrag.mag=true;mapDrag.moved=true;return}mapDrag={sx:e.clientX,sy:e.clientY,start:svgPt(e),c:{...S.mapC},moved:false,mag:e.pointerType==='touch'&&MAGN.s>1.01}});
   window.addEventListener('pointermove',e=>{
     if(!mapDrag)return;
     const p=svgPt(e),dx=Math.round((mapDrag.start.x-p.x)/TW),dy=Math.round((p.y-mapDrag.start.y)/TH);
     if(Math.hypot(e.clientX-mapDrag.sx,e.clientY-mapDrag.sy)>6)mapDrag.moved=true;
-    if(!mapDrag.moved)return;
+    if(!mapDrag.moved||mapDrag.mag)return;
     const nx=wrapC(mapDrag.c.x+dx),ny=wrapC(mapDrag.c.y+dy);
     if(nx!==S.mapC.x||ny!==S.mapC.y){S.mapC={x:nx,y:ny};renderMap()}
   });
@@ -1940,7 +1978,7 @@ function makeSched(p){
 }
 function aiSeenLine(p){if(!p.sch)p.sch=makeSched(p);const now=Date.now(),lh=localHour(p,now),hh=Math.floor(lh),mm=Math.floor((lh-hh)*60);
   const ago=p.seen?(now-p.seen)/1000:null,pad=n=>String(n).padStart(2,'0');
-  return `<p class="muted">Their local time: ${hh}:${pad(mm)} (UTC${p.sch.tz>=0?'+':''}${p.sch.tz}) · ${!p.active?'not seen for days':ago===null?'not seen yet':ago<900?'<b style="color:var(--good)">online now</b>':'last seen '+agoText(ago)}</p>`}
+  return `<p class="muted">Their local time: ${hh}:${pad(mm)} (UTC${p.sch.tz>=0?'+':''}${p.sch.tz}) · ${looksInactive(p)?'not seen for days':ago===null?'not seen yet':ago<900?'<b style="color:var(--good)">online now</b>':'last seen '+agoText(ago)}</p>`}
 function agoText(sec){return sec<3600?Math.round(sec/60)+' min ago':sec<86400?Math.round(sec/3600)+' h ago':Math.round(sec/86400)+' days ago'}
 function u01(a,b){let h=Math.imul(a^0x9e3779b9,0x85ebca6b)^Math.imul(b,0xc2b2ae35);h^=h>>>16;h=Math.imul(h,0x7feb352d);h^=h>>>15;h=Math.imul(h,0x846ca68b);h^=h>>>16;return (h>>>0)/4294967296}
 function hashStr(t){let h=2166136261;for(let i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
@@ -2155,7 +2193,7 @@ function spawnSpot(q){const R=rng(Math.floor(Math.random()*1e9)),settled=S.ai?Ob
    ===================================================================== */
 const FB_CONFIG=window.__FB_CONFIG||{apiKey:"AIzaSyCXrBGCG6y4k4G5YsDdRyByWZh0qXpJ_n0",authDomain:"hearthwood-c9840.firebaseapp.com",databaseURL:"https://hearthwood-c9840-default-rtdb.firebaseio.com",projectId:"hearthwood-c9840",storageBucket:"hearthwood-c9840.firebasestorage.app",messagingSenderId:"936840765328",appId:"1:936840765328:web:db68cbf697848c68201d15"};   // replace null with your config; paste your Firebase web app config object here, e.g. {apiKey:"...",authDomain:"...",databaseURL:"...",projectId:"...",appId:"..."}
 // what belongs to each human rather than to the world
-const HK=['qSeen','sent','dmq','ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
+const HK=['seenVer','qSeen','sent','dmq','ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
 const LOCAL_HK=['mapC','mapZ','pageSel','cur'];
 async function worldKey(pub,pw){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pub+':'+pw));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')}
 const CO={sid:Math.random().toString(36).slice(2),pub:null,on:false,role:null,uid:null,wid:null,db:null,pending:[],seq:0,ackOf:{},headless:false,snapAt:0,lastHS:null,hostName:''};
@@ -2183,7 +2221,7 @@ function newHuman(uid,name,tribe,quad,t){
   const sp=spawnSpot(quad||''),v=makeVillage('New village',sp.x,sp.y,layoutFor(3),true,t);v.pid=p.id;v.tribe=tribe;
   S.ai.vil[v.id]=v;S.ai.at[sp.x+','+sp.y]=v.id;p.vids.push(v.id);p.mapC={x:sp.x,y:sp.y};aiDerive(v);return p}
 /* ---------- orders: the host replays a friend's click with the inputs they had filled in ---------- */
-const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','sendDM','markQuestSeen','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
+const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','sendDM','markQuestSeen','markChangelogSeen','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
 function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
@@ -2210,7 +2248,18 @@ async function writeSnap(){if(!CO.on||CO.role!=='host')return;const ver=Date.now
   upd.c={};for(let i=0;i<n;i++)upd.c['p'+i]=b.slice(i*2e6,(i+1)*2e6);upd.meta={v:ver,n,t:S.ai.last,by:CO.uid};
   await CO.db.ref(`worlds/${CO.wid}/snap`).set(upd);CO.snapAt=Date.now()}
 async function readSnap(){const s=(await CO.db.ref(`worlds/${CO.wid}/snap`).get()).val();if(!s||!s.meta)return null;
-  let b='';for(let i=0;i<s.meta.n;i++)b+=s.c['p'+i];return {S:JSON.parse(await gunz(b)),meta:s.meta}}
+  let b='';for(let i=0;i<s.meta.n;i++)b+=s.c['p'+i];const W=JSON.parse(await gunz(b));fixQuit(W);return {S:W,meta:s.meta}}
+// friends who joined without typing a name were called "Friend": use their username instead
+function fixFriendNames(){if(!S||!S.ai)return;for(const p of S.ai.players)if(p.human&&p.name==='Friend'){p.name=p.player=p.uid;if(CO.db)CO.db.ref(`worlds/${CO.wid}/meta/humans/${p.uid}`).set(p.uid)}if(S.player==='Friend'&&S.me)S.player=S.me}
+// worlds made before v0.1: revive everyone who stopped, then roll who quits (and when) with the current pattern
+function aiRequitOnce(){if(!S||!S.ai||S.ai.qv>=2)return;const A=S.ai,now=Date.now(),D=DAY(),R=rng(now%1e9);
+  const P=A.players.filter(p=>!p.nat&&!p.human);for(const p of P){if(p.joined&&!p.active)p.active=true;p.quit=Infinity}
+  const keys=Object.keys(QUIT_W),n={};for(const p of P)n[p.pers]=(n[p.pers]||0)+1;const N=P.length||1,target=.3+R()*.1;
+  let k=1;for(let it=0;it<40;it++){const sh=keys.reduce((a,x)=>a+(n[x]||0)/N*Math.min(1,k*QUIT_W[x]),0);k*=target/Math.max(.01,sh)}
+  for(const p of P)if(R()<Math.min(1,k*QUIT_W[p.pers])){const st=p.joined?(p.first||p.join):p.join;let q=st+(5+16*Math.sqrt(R()))*D;if(q<now)q=now+R()*D;p.quit=q}
+  A.qv=2}
+// a saved world stores "never quits" as null; read it back as never, and bring back anyone that mistake retired
+function fixQuit(W){if(!W||!W.ai)return;for(const p of W.ai.players)if(p.quit===null||p.quit===undefined){p.quit=Infinity;if(p.joined&&!p.nat&&!p.active)p.active=true}}
 /* ---------- each human's own part, published every few seconds by the host ---------- */
 function involves(m,ids,xy){return ids.has(m.from)||ids.has(m.to)||ids.has(m.mv)||xy.has(m.x+','+m.y)}
 function humanState(uid){return asHuman(uid,()=>{const ids=new Set(S.villages.map(v=>v.id)),xy=new Set(S.villages.map(v=>v.x+','+v.y)),p={};
@@ -2238,7 +2287,12 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   if(!dragActive())render()}
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- the world around each friend: only what changed; near things every minute, the wider area every 10 minutes, the rest hourly ---------- */
-const GAME_VER='2026-11-21d';
+// version: 0.1 → small updates 0.11, 0.12 … → bigger updates 0.2, 0.3 … → 1.0
+const GAME_VER='0.11';
+// stored in the world as "v0.1" (the "v" keeps older pages, which compared plain text, switching over correctly)
+const VKEY='v'+GAME_VER;
+function verParts(v){const m=/^v?(\d+)\.(\d)(\d*)$/.exec(v||'');return m?[+m[1],+m[2],m[3]?+m[3]:0]:[-1,0,0]}
+function verCmp(a,b){const x=verParts(a),y=verParts(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]<y[i]?-1:1;return 0}
 const DG_NEAR=20,DG_MID=100,DG_LOOK=25;
 function dgVSig(v){return [v.pid,v.name,v.capital?1:0,v.ww?wwLvl(v):0,Math.floor(v.loy??100),v.wall||0,v.rl||0].join('|')}
 function dgPSig(p){return [p.name,p.ally||'',p.active?1:0,p.vids.join(',')].join('|')}
@@ -2292,7 +2346,7 @@ async function dgRound(){if(CO.role!=='host')return;const now=Date.now();CO.dgAt
 async function dgApply(z){const pk=JSON.parse(await gunz(z));if(pk.resync){await clientReload();return}
   for(const id in pk.v){const e=pk.v[id];if(e.f){const o=S.ai.vil[id];if(o&&S.ai.at[o.x+','+o.y]===id)delete S.ai.at[o.x+','+o.y];S.ai.vil[id]=e.d;S.ai.at[e.d.x+','+e.d.y]=id}else{const v=S.ai.vil[id];if(v)Object.assign(v,e)}}
   for(const id of pk.rm){const v=S.ai.vil[id];if(v){if(S.ai.at[v.x+','+v.y]===id)delete S.ai.at[v.x+','+v.y];delete S.ai.vil[id]}}
-  let np=false;for(const id in pk.p){const e=pk.p[id];let x=aiP(id);if(e.f){if(x&&x.uid===S.me)continue;if(x)Object.assign(x,e.d);else{S.ai.players.push(e.d);np=true}}else if(x&&x.uid!==S.me)Object.assign(x,e)}
+  let np=false;for(const id in pk.p){const e=pk.p[id];let x=aiP(id);if(e.f){if(x&&x.uid===S.me)continue;if(e.d.quit===null)e.d.quit=Infinity;if(x)Object.assign(x,e.d);else{S.ai.players.push(e.d);np=true}}else if(x&&x.uid!==S.me)Object.assign(x,e)}
   for(const a of pk.a){const i=S.ai.alli.findIndex(x=>x.id===a.id);if(i>=0)S.ai.alli[i]=a;else S.ai.alli.push(a)}
   for(const k in pk.o)S.oases[k]=pk.o[k];
   if(pk.arts)S.arts=pk.arts;if('nat' in pk)S.nat=pk.nat;if('over' in pk)S.over=pk.over;
@@ -2300,7 +2354,7 @@ async function dgApply(z){const pk=JSON.parse(await gunz(z));if(pk.resync){await
 async function clientReload(){const sn=await readSnap();if(!sn)return;CO.sv=sn.meta.v;CO.rev=CO.rev;const hs=CO.lastHS;S=sn.S;aiIndex();_pcacheFor=null;unstash(CO.uid);if(hs)mergeHS(hs);render()}
 function dgListen(){CO.db.ref(`worlds/${CO.wid}/dg/${CO.uid}`).on('child_added',async d=>{const z=d.val();d.ref.remove();if(CO.role!=='client'||!z)return;
   CO._dgq=(CO._dgq||Promise.resolve()).then(()=>dgApply(z)).catch(e=>console.warn('dg',e))})}
-function dgPresence(){const m=S&&S.mapC;CO.db.ref(`worlds/${CO.wid}/on/${CO.uid}`).set({t:Date.now(),sv:CO.sv||0,ver:GAME_VER,...(m?{mx:m.x,my:m.y}:{})})}
+function dgPresence(){const m=S&&S.mapC;CO.db.ref(`worlds/${CO.wid}/on/${CO.uid}`).set({t:Date.now(),sv:CO.sv||0,ver:VKEY,...(m?{mx:m.x,my:m.y}:{})})}
 // everyone should run the same version of the game. An update never costs anyone progress:
 // the host saves the world first, then reloads into the new version; friends' own villages are also kept by the host every few seconds.
 async function freshReload(tag){try{const k='hw-upd',o=JSON.parse(sessionStorage.getItem(k)||'null');
@@ -2311,14 +2365,14 @@ async function hostUpdate(newer){if(CO.updating)return;CO.updating=true;
   try{await writeSnap();await publishHS();await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,sid:CO.sid,until:0})}catch(e){console.warn('update save',e)}
   if(!await freshReload(newer)){CO.updating=false;showNet('');openDlg('Update waiting',`<p>A newer version of Hearthwood is out, but this browser still loaded the old one (the site can take a few minutes to update). Try refreshing again in a few minutes. Your world is saved.</p><button class="btn" onclick="location.reload()">Refresh</button>`)}}
 function verCheck(meta){const mv=meta.ver||'';
-  if(CO.role==='host'){if(mv<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(GAME_VER);
-    if(meta.newer&&meta.newer>GAME_VER){hostUpdate(meta.newer);return false}
-    if(meta.newer&&meta.newer<=GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/newer`).remove();return true}
+  if(CO.role==='host'){if(verCmp(mv,VKEY)<0)CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(VKEY);
+    if(meta.newer&&verCmp(meta.newer,VKEY)>0){hostUpdate(meta.newer);return false}
+    if(meta.newer&&verCmp(meta.newer,VKEY)<=0)CO.db.ref(`worlds/${CO.wid}/meta/newer`).remove();return true}
   // an older page: reload into the new version (the host already has everything this player did)
-  if(mv>GAME_VER){showNet('Hearthwood was updated. Loading the new version…');CO.paused=true;
+  if(verCmp(mv,VKEY)>0){showNet('Hearthwood was updated. Loading the new version…');CO.paused=true;
     freshReload(mv).then(ok=>{if(!ok)showNet(`Hearthwood was updated, but this browser still loaded the old version. <a href="#" onclick="location.reload();return false">Refresh</a> again in a minute or two.`)});return false}
   // a newer page than the host's: wait a moment while the host updates, so nothing is sent to old code
-  if(mv<GAME_VER){if((meta.newer||'')<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/newer`).set(GAME_VER);CO.paused=true;
+  if(verCmp(mv,VKEY)<0){if(verCmp(meta.newer||'',VKEY)<0)CO.db.ref(`worlds/${CO.wid}/meta/newer`).set(VKEY);CO.paused=true;
     showNet(`Waiting for ${esc(CO.hostName||'the host')} to switch to the new version… (usually under a minute)`);return false}
   if(CO.paused){CO.paused=false;showNet('')}return true}
 /* ---------- hosting ---------- */
@@ -2336,6 +2390,7 @@ async function becomeHost(have){
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
     applyRelinks((await CO.db.ref(`worlds/${CO.wid}/relink`).get()).val());aiIndex();_pcacheFor=null;unstash(CO.uid)}
+  fixFriendNames();aiRequitOnce();
   if(!S.villages||!S.villages.length){showNet('Could not find your villages in this world. Reload the page to try again.');CO.role=null;return}
   await catchUp();advance(Date.now());render();showNet('');
   CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.sid===CO.sid)return;
@@ -2351,7 +2406,7 @@ let _coT=0;
 async function coopBeat(){if(!CO.on)return;const now=Date.now();
   const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();
   if(!meta){CO.on=false;try{CO.db.ref(`worlds/${CO.wid}/lease`).onDisconnect().cancel()}catch(e){}showNet(`This world was deleted by its creator. <a href="${location.pathname}">Back to the start</a>`);return}
-  if(!verCheck(meta)){if(CO.role==='client'&&CO.paused){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();if((!l||l.until<now)&&(meta.ver||'')<=GAME_VER&&await takeLease()){CO.paused=false;showNet('');await becomeHost();await CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(GAME_VER)}}return}
+  if(!verCheck(meta)){if(CO.role==='client'&&CO.paused){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();if((!l||l.until<now)&&verCmp(meta.ver||'',VKEY)<=0&&await takeLease()){CO.paused=false;showNet('');await becomeHost();await CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(VKEY)}}return}
   if(CO.role==='client'&&meta.rev&&meta.rev!==CO.rev){const had=CO.rev;CO.rev=meta.rev;if(had)await clientReload()}
   if(CO.role==='host'){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
     if(l&&l.sid!==CO.sid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
@@ -2363,7 +2418,7 @@ async function coopBeat(){if(!CO.on)return;const now=Date.now();
   coopBadge()}
 function showNet(t){let d=document.getElementById('netov');if(!t){if(d)d.remove();return}if(!d){d=document.createElement('div');d.id='netov';d.style.cssText='position:fixed;inset:0;background:rgba(40,30,15,.55);display:flex;align-items:center;justify-content:center;z-index:999';document.body.appendChild(d)}
   d.innerHTML=`<div class="board" style="width:360px;text-align:center"><p style="margin:0">${t}</p></div>`}
-function coopBadge(){let b=document.getElementById('cobadge');if(!CO.on){if(b)b.remove();return}if(!b){b=document.createElement('div');b.id='cobadge';b.style.cssText='position:fixed;left:10px;bottom:10px;background:#fff8e6;border:2px solid #b08a4a;border-radius:8px;padding:4px 10px;font-size:12px;z-index:40';document.body.appendChild(b)}
+function coopBadge(){let b=document.getElementById('cobadge');if(!CO.on){if(b)b.remove();return}if(!b){b=document.createElement('div');b.id='cobadge';b.style.cssText='position:fixed;right:10px;bottom:10px;background:#fff8e6;border:2px solid #b08a4a;border-radius:8px;padding:4px 10px;font-size:12px;z-index:40';document.body.appendChild(b)}
   b.innerHTML=CO.role==='host'?`Co-op · <b>you are hosting</b> · signed in as ${esc(CO.uid)} · <a href="#" onclick="coopInvite();return false">invite</a> · <a href="#" onclick="coopSignOut();return false">sign out</a>`:`Co-op · hosted by <b>${esc(CO.hostName||'?')}</b> · signed in as ${esc(CO.uid)} · <a href="#" onclick="coopInvite();return false">invite</a> · <a href="#" onclick="coopSignOut();return false">sign out</a>`}
 function coopInvite(){const url=location.origin+location.pathname+'?w='+CO.pub;openDlg('Invite friends',`<p>Send your friends this link. They choose a tribe and a quadrant, and start with the same beginner protection and tasks you had.</p><input type="text" readonly value="${url}" style="width:100%" onclick="this.select()"><p class="muted">They also need the world password. Send it separately (a different app, or tell them), not in the same message as the link.</p>`)}
 /* ---------- starting up ---------- */
@@ -2405,7 +2460,7 @@ async function coopCreate(pw){if(!await fbInit())return toast('Co-op needs the F
   if(!S.player||S.player==='You')S.player=CO.uname||CO.uid;
   const pv=S.villages[0],p={id:'h_'+CO.uid,uid:CO.uid,name:S.player,tribe:S.tribe,human:true,active:true,joined:true,pers:'veteran',skill:1,vids:[],join:S.created,quit:Infinity};
   S.ai.players.push(p);_pcacheFor=null;S.me=CO.uid;CO.owner=CO.uid;
-  await CO.db.ref(`worlds/${CO.wid}/meta`).set({created:S.created,speed:S.speed,owner:CO.uid,ver:GAME_VER,humans:{[CO.uid]:S.player}});
+  await CO.db.ref(`worlds/${CO.wid}/meta`).set({created:S.created,speed:S.speed,owner:CO.uid,ver:VKEY,humans:{[CO.uid]:S.player}});
   await takeLease();await becomeHost();history.replaceState(null,'','?w='+CO.pub);coopInvite()}
 async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the world…');
   if(!await fbInit()){showNet('');return false}wrapActions();
@@ -2421,11 +2476,11 @@ function coopPwForm(pub,err){openDlg('This world is password protected',`${err?`
   <div style="margin-top:12px"><button class="btn" onclick="coopPwGo('${pub}')">Enter</button></div>`);const c=document.querySelector('#dlg .close');if(c)c.style.display='none'}
 function coopPwGo(pub){const pw=document.getElementById('wpw').value.trim();closeDlg();coopBoot(pub,pw)}
 function coopJoinForm(meta){openDlg.wide=true;openDlg('Join this world',`<p>A world at speed ×${meta.speed}, day ${Math.floor((Date.now()-meta.created)/(86400000/meta.speed))+1}.</p>
-  <label class="f">Your name</label><input type="text" id="jn" maxlength="20" value="">
+  <label class="f">Your name</label><input type="text" id="jn" maxlength="20" value="${esc(CO.uname||CO.uid||'')}">
   <label class="f">Tribe</label>${tribeCards('jt')}
   <label class="f">Start in</label><select id="jq"><option value="">A random quadrant</option><option value="++">North-east (+|+)</option><option value="+-">South-east (+|−)</option><option value="--">South-west (−|−)</option><option value="-+">North-west (−|+)</option></select>
   <div style="margin-top:12px"><button class="btn" onclick="coopJoin()">Join</button></div>`)}
-async function coopJoin(){const name=(document.getElementById('jn').value||'').trim()||'Friend';
+async function coopJoin(){const name=(document.getElementById('jn').value||'').trim()||CO.uname||CO.uid;
   CO.join={uid:CO.uid,name,tribe:document.querySelector('input[name=jt]:checked').value,quad:document.getElementById('jq').value,t:Date.now()};
   await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).set(CO.join);
   closeDlg();showNet('Joining… waiting for the host');
@@ -2473,7 +2528,8 @@ function aiSetup(count,mix){
   // who gives up: scaled on the world's actual make-up so the total lands on this world's target
   const n={};for(const p of S.ai.players)n[p.pers]=(n[p.pers]||0)+1;const N=S.ai.players.length;
   k=1;for(let it=0;it<40;it++){const sh=keys.reduce((a,x)=>a+(n[x]||0)/N*Math.min(1,k*QUIT_W[x]),0);k*=target/Math.max(.01,sh)}
-  for(const p of S.ai.players)if(R()<Math.min(1,k*QUIT_W[p.pers]))p.quit=Math.max(p.join,now)+(5+R()*16)*D;
+  for(const p of S.ai.players)if(R()<Math.min(1,k*QUIT_W[p.pers]))p.quit=Math.max(p.join,now)+(5+16*Math.sqrt(R()))*D;
+  S.ai.qv=2;
   S.ai.players.sort((a,b)=>a.join-b.join);
   // early arrivals settle near the middle, later ones further out, as on a real server
   S.ai.players.forEach((p,i)=>{const rad=NAT_R+3+Math.sqrt(i+1)*1.6*(0.8+R()*0.4),a=R()*Math.PI*2;p.home={x:wrapC(Math.round(Math.cos(a)*rad)),y:wrapC(Math.round(Math.sin(a)*rad))}});
@@ -3341,21 +3397,25 @@ function allyRoom(a){if(a.lead===myPid()||(a.mine&&!a.lead))return allyCap();con
   let e=0;for(const id of lp.vids){const v=S.ai.vil[id];if(v)e=Math.max(e,withV(v,()=>lvl(18)))}const c=3*e;if(_alCap)_alCap.set(a.id,c);return c}
 const allyName=id=>{if(!S.ai)return '?';const i=+String(id).slice(2),a=S.ai.alli[i]&&S.ai.alli[i].id===id?S.ai.alli[i]:S.ai.alli.find(x=>x.id===id);return a?a.name:'?'};
 function joinAlliance(id){if(withV(V,()=>lvl(18))<1&&!S.villages.some(v=>withV(v,()=>lvl(18))>0))return toast('You need an Embassy to join an alliance.');{const a=S.ai.alli.find(x=>x.id===id);if(a&&a.members>=allyRoom(a))return toast(allyName(id)+' is full.')}S.ally=id;{const a=S.ai.alli.find(x=>x.id===id);if(a)a.members=(a.members||0)+1}S.msgs=(S.msgs||[]).filter(m=>!(m.extra&&m.extra.invite));save();toast('You joined '+allyName(id)+'.');openPage('ally')}
-let statTab='pl';
+let statTab='pl',statQ='';
+function statSearch(){const e=document.getElementById('stq');statQ=(e&&e.value||'').trim();render()}
+function showOnMap(pid){const p=pid&&aiP(pid),v=p&&p.vids.length?S.ai.vil[p.vids.find(id=>S.ai.vil[id]&&S.ai.vil[id].capital)||p.vids[0]]:V;if(!v)return;S.mapC={x:v.x,y:v.y};setView('map');setTimeout(()=>tileInfo(v.x,v.y),50)}
 function pageStats(){
   const rows=[];
-  if(S.ai)for(const p of S.ai.players){if(!p.vids.length||p.nat)continue;let pop=0;p.vids.forEach(id=>pop+=aiPop(S.ai.vil[id]));rows.push({n:p.name,t:p.tribe,a:p.ally?allyName(p.ally):'',v:p.vids.length,pop,act:p.active})}
+  if(S.ai)for(const p of S.ai.players){if(!p.vids.length||p.nat)continue;let pop=0;p.vids.forEach(id=>pop+=aiPop(S.ai.vil[id]));rows.push({n:p.name,t:p.tribe,a:p.ally?allyName(p.ally):'',v:p.vids.length,pop,act:!looksInactive(p),pid:p.id})}
   let mp=0;S.villages.forEach(v=>mp+=withV(v,pop));rows.push({n:S.player+' (you)',t:TR(),a:S.ally?allyName(S.ally):'',v:S.villages.length,pop:mp,me:1,act:1});
-  rows.sort((a,b)=>b.pop-a.pop);const rank=rows.findIndex(r=>r.me)+1;
+  rows.sort((a,b)=>b.pop-a.pop||(b.me?1:0)-(a.me?1:0));const rank=rows.findIndex(r=>r.me)+1;
   const al={};rows.forEach(r=>{if(r.a){al[r.a]=al[r.a]||{n:r.a,m:0,pop:0};al[r.a].m++;al[r.a].pop+=r.pop}});
   const als=Object.values(al).sort((a,b)=>b.pop-a.pop);
-  const tabs=`<div class="tabs" style="margin-bottom:10px"><button class="${statTab!=='al'?'on':''}" onclick="statTab='pl';render()">Players</button><button class="${statTab==='al'?'on':''}" onclick="statTab='al';render()">Alliances</button></div>`;
+  const q=statQ.toLowerCase();
+  const tabs=`<div class="tabs" style="margin-bottom:10px;display:flex;gap:6px;align-items:center"><button class="${statTab!=='al'?'on':''}" onclick="statTab='pl';render()">Players</button><button class="${statTab==='al'?'on':''}" onclick="statTab='al';render()">Alliances</button><span style="flex:1"></span>
+   <input type="text" id="stq" placeholder="Search ${statTab==='al'?'alliances':'players or alliances'}" value="${esc(statQ)}" style="width:220px" onkeydown="if(event.key==='Enter')statSearch()"><button class="btn grey" onclick="statSearch()">Search</button>${statQ?`<button class="btn grey" onclick="statQ='';render()">Clear</button>`:''}</div>`;
   if(statTab==='al')return `<div class="board"><h2 style="margin:0 0 8px">Statistics</h2>${tabs}<p>${S.ally?`Your alliance <b>${esc(allyName(S.ally))}</b> is ranked <b>${als.findIndex(a=>a.n===allyName(S.ally))+1}</b> of ${als.length}.`:`${als.length} alliances.`}</p>
-   <table class="lv stattab" style="width:100%;max-width:560px"><tr><th>#</th><th style="text-align:left">Alliance</th><th>Members</th><th>Population</th><th>Average</th></tr>${als.map((a,i)=>`<tr style="${S.ally&&a.n===allyName(S.ally)?'background:#fff2cc;font-weight:bold':''}"><td>${i+1}</td><td style="text-align:left">${esc(a.n)}</td><td>${a.m}</td><td>${fmt(a.pop)}</td><td>${fmt(Math.round(a.pop/a.m))}</td></tr>`).join('')||'<tr><td colspan="5">None yet</td></tr>'}</table></div>`;
+   <table class="lv stattab" style="width:100%;max-width:560px"><tr><th>#</th><th style="text-align:left">Alliance</th><th>Members</th><th>Population</th><th>Average</th></tr>${als.map((a,i)=>[a,i]).filter(([a])=>!q||a.n.toLowerCase().includes(q)).slice(0,100).map(([a,i])=>`<tr style="${S.ally&&a.n===allyName(S.ally)?'background:#fff2cc;font-weight:bold':''}"><td>${i+1}</td><td style="text-align:left">${esc(a.n)}</td><td>${a.m}</td><td>${fmt(a.pop)}</td><td>${fmt(Math.round(a.pop/a.m))}</td></tr>`).join('')||'<tr><td colspan="5">None yet</td></tr>'}</table></div>`;
   return `<div class="board"><h2 style="margin:0 0 8px">Statistics</h2>${tabs}<p>You are ranked <b>${rank}</b> of ${rows.length} players by population.</p>${endgameLine()}
    <table class="lv stattab" style="width:100%"><tr><th>#</th><th style="text-align:left">Player</th><th>Tribe</th><th style="text-align:left">Alliance</th><th>Villages</th><th>Population</th></tr>
-   ${rows.slice(0,100).map((r,i)=>`<tr style="${r.me?'background:#fff2cc;font-weight:bold':''}${r.act?'':';color:#9a8a70'}"><td>${i+1}</td><td style="text-align:left">${esc(r.n)}${r.act?'':' (inactive)'}</td><td>${TRIBES[r.t].n}</td><td style="text-align:left">${esc(r.a)}</td><td>${r.v}</td><td>${fmt(r.pop)}</td></tr>`).join('')}
-   ${rank>100?`<tr><td colspan="6">…</td></tr><tr style="background:#fff2cc;font-weight:bold"><td>${rank}</td><td style="text-align:left">${esc(S.player)} (you)</td><td>${TRIBES[TR()].n}</td><td style="text-align:left">${S.ally?esc(allyName(S.ally)):''}</td><td>${S.villages.length}</td><td>${fmt(mp)}</td></tr>`:''}</table></div>`;
+   ${(q?rows.map((r,i)=>[r,i]).filter(([r])=>r.n.toLowerCase().includes(q)||r.a.toLowerCase().includes(q)):rows.slice(0,100).map((r,i)=>[r,i])).slice(0,100).map(([r,i])=>`<tr style="${r.me?'background:#fff2cc;font-weight:bold':''}${r.act?'':';color:#9a8a70'}"><td>${i+1}</td><td style="text-align:left"><a href="#" title="Show on the map" onclick="showOnMap('${r.pid||''}');return false">${esc(r.n)}</a>${r.act?'':' (inactive)'}</td><td>${TRIBES[r.t].n}</td><td style="text-align:left">${esc(r.a)}</td><td>${r.v}</td><td>${fmt(r.pop)}</td></tr>`).join('')}
+   ${q&&!rows.some(r=>r.n.toLowerCase().includes(q)||r.a.toLowerCase().includes(q))?'<tr><td colspan="6">Nobody matches that search.</td></tr>':''}${rank>100&&!q?`<tr><td colspan="6">…</td></tr><tr style="background:#fff2cc;font-weight:bold"><td>${rank}</td><td style="text-align:left">${esc(S.player)} (you)</td><td>${TRIBES[TR()].n}</td><td style="text-align:left">${S.ally?esc(allyName(S.ally)):''}</td><td>${S.villages.length}</td><td>${fmt(mp)}</td></tr>`:''}</table></div>`;
 }
 // occasional alliance invitations
 function aiSocial(now){
@@ -3527,7 +3587,7 @@ const QUESTS=[
   ok:()=>nAt(0,1)>0||inCap(()=>V.jobs.some(j=>B[j.b].field===0)),rw:'wood',rwText:'The Woodcutter is finished instantly.'},
  {t:'Crop',say:'Your workers are hungry after a long day. Raise a cropland so there is enough to eat.',task:'Upgrade one Cropland to level 1.',ok:()=>nAt(3,1)>0,rw:[50,60,30,10]},
  {t:'Your village’s name',say:'A village deserves a proper name. Click the pencil on your village sign and give it one.',task:'Rename your village.',ok:()=>capV().name!=='New village',rw:[30,60,30,20]},
- {t:'Other players',say:'You are not alone out here. Open the Statistics and see where you stand among your neighbours.',task:'Enter your current rank.',ask:'Your rank',ans:()=>String(myRank()),rw:[40,30,20,30]},
+ {t:'Other players',say:'You are not alone out here. Open the Statistics and see where you stand among your neighbours.',task:'Enter your current rank.',ask:'Your rank',rank:1,ans:()=>String(myRank()),rw:[40,30,20,30]},
  {t:'Two building orders',say:'Clay and iron are just as important as lumber. Get a clay pit and an iron mine going.',task:'Upgrade one Iron Mine and one Clay Pit to level 1.',ok:()=>nAt(1,1)>0&&nAt(2,1)>0,rw:[50,60,30,30]},
  {t:'Messages',say:'I have sent you a message. Open your Messages and read it.',task:'Read the Taskmaster’s message.',start:'msg',ok:()=>{const m=(S.msgs||[]).find(m=>m.id===S.quest.msg);return !m||m.read},rw:null},
  {t:'Neighbours',say:'Every village around here belongs to someone. I want you to find one of them on the map.',task:()=>{const v=questNb();return v?`Find the village <b>${esc(v.name)}</b> on the map and enter its coordinates.`:'Find any neighbouring village on the map and enter its coordinates.'},start:'nb',ask:'xy',rw:[60,30,40,90]},
@@ -3540,7 +3600,7 @@ const QUESTS=[
  {t:'To two',say:'Time to go a step further.',task:'Upgrade one of each field type to level 2.',ok:()=>[0,1,2,3].every(t=>nAt(t,2)>0),rw:[60,50,40,30]},
  {t:'Instructions',say:'You can’t build a Barracks yet, but you can plan for it. The Instructions (the book at the top of the screen) list every building and troop with its costs and requirements.',task:'Look up the Barracks in the Instructions and enter how much lumber it costs.',ask:'Lumber',ans:()=>'210',rw:[50,30,60,20]},
  {t:'Main Building',say:'Your Main Building sets how fast your builders work, and unlocks new buildings.',task:'Upgrade the Main Building to level 3.',ok:()=>capLvl(15)>=3,rw:[75,75,40,40]},
- {t:'Advanced!',say:'You have grown since we last looked. Check the Statistics again.',task:'Enter your current rank.',ask:'Your rank',ans:()=>String(myRank()),rw:[100,90,100,60]},
+ {t:'Advanced!',say:'You have grown since we last looked. Check the Statistics again.',task:'Enter your current rank.',ask:'Your rank',rank:1,ans:()=>String(myRank()),rw:[100,90,100,60]},
  {t:'Choose your path',say:'Will you build an army, or a trading economy? Choose, and I will guide you.',task:'Choose Military or Economy.',choose:true},
  // military branch
  {br:'M',t:'Rally Point',say:'Every army gathers at the Rally Point, the curved plot beside your Main Building.',task:'Build a Rally Point.',ok:()=>capLvl(16)>0,rw:[80,90,60,40]},
@@ -3580,9 +3640,9 @@ function openQuest(flash){
   const list=questList(),n=S.quest.i+1,rw=q.rw==='wood'?q.rwText:q.rw==='rat'?'An army.':q.rw==='tok'?'4 free resource-field upgrades from level 2 to level 3.':q.rw?`<div class="cost">${q.rw.map((v,i)=>`<span>${ICON[i]}${v}</span>`).join('')}</div>`:'<span class="muted">None</span>';
   let act='';
   if(q.choose)act=`<button class="btn" onclick="questBranch('M')">Military</button> <button class="btn" onclick="questBranch('E')">Economy</button>`;
-  else if(q.ask==='xy')act=`<div style="display:flex;gap:6px;align-items:center">x <input id="qx" type="number" style="width:70px"> y <input id="qy" type="number" style="width:70px"> <button class="btn" onclick="questAnswer()">Submit</button></div>`;
-  else if(q.ask)act=`<div style="display:flex;gap:6px;align-items:center">${q.ask} <input id="qa" type="number" style="width:90px"> <button class="btn" onclick="questAnswer()">Submit</button></div>`;
-  else if(q.pay)act=capV().res[3]>=q.pay[3]?`<button class="btn" onclick="questCollect()">Hand over 200 crop</button>`:'<p class="muted">You don’t have 200 crop in your capital yet.</p>';
+  else if(q.ask==='xy')act=`<div style="display:flex;gap:6px;align-items:center">x <input id="qx" type="number" style="width:70px"> y <input id="qy" type="number" style="width:70px"> <button class="btn" onclick="questAnswer()">Submit</button></div>${overflowNote(q.rw)}`;
+  else if(q.ask)act=`<div style="display:flex;gap:6px;align-items:center">${q.ask} <input id="qa" type="number" style="width:90px"> <button class="btn" onclick="questAnswer(${q.rank?'myRank()':''})">Submit</button></div>${overflowNote(q.rw)}`;
+  else if(q.pay)act=capV().res[3]>=q.pay[3]?`<button class="btn" onclick="questCollect()">Hand over 200 crop</button>${overflowNote(q.rw)}`:'<p class="muted">You don’t have 200 crop in your capital yet.</p>';
   else act=questReady()?`<button class="btn" onclick="questCollect()">Collect reward</button>${overflowNote(q.rw)}`:'<p class="muted">Not done yet. Come back when it’s finished.</p>';
   openDlg(`Taskmaster · task ${n} of ${list.length}`,`${flash?`<div class="qflash">${flash}</div>`:''}<h3>${q.t}</h3><p><i>“${q.say}”</i></p><p><b>Task:</b> ${typeof q.task==='function'?q.task():q.task}</p><div style="margin:6px 0"><b>Reward:</b> ${rw}</div>${act}
    <p style="margin-top:14px;font-size:12px"><a href="#" onclick="if(confirmSkip.armed){S.quest.off=1;save();render();openQuest()}else{confirmSkip.armed=1;this.textContent='Click again to skip all remaining tasks'}return false">Skip the tasks</a></p>`);
@@ -3596,15 +3656,24 @@ function questCollect(){const q=curQuest();if(!q)return;advance(Date.now());
   if(q.pay){const cv=capV();if(cv.res[3]<q.pay[3])return toast('Not enough crop.');for(let i=0;i<4;i++)cv.res[i]-=q.pay[i]}
   else if(!questReady())return toast('That task is not finished yet.');
   questDone(questReward(q))}
-function questAnswer(){const q=curQuest();if(!q)return;let ok;
+// shown: the rank on the player's own screen when they pressed Submit (a friend's copy of the world can lag the host's)
+function questAnswer(shown){const q=curQuest();if(!q)return;let ok;
   if(q.ask==='xy'){const x=+document.getElementById('qx').value,y=+document.getElementById('qy').value,v=questNb(),at=aiAt(x,y);
     ok=v?at===v:!!at}
-  else ok=document.getElementById('qa').value.trim()===q.ans();
+  else{const a=document.getElementById('qa').value.trim();ok=a===q.ans()||(!!q.rank&&shown!==undefined&&a===String(shown))}
   if(!ok)return toast(q.ask==='xy'?'That isn’t the right village. Check the name on the map.':'That isn’t right. Have another look.');
   questDone(questReward(q))}
 function questBranch(b){S.quest.br=b;S.quest.i++;save();render();openQuest()}
 function updateQBtn(){const el=document.getElementById('qbtn');if(!el)return;const q=S&&curQuest(),show=!!q&&['res','vil'].includes(view);
   el.style.display=show?'flex':'none';if(show){el.classList.toggle('ready',questReady());el.classList.toggle('first',!S.qSeen)}}
+// what changed in the latest update (shown from the BETA button, which glows until opened)
+const CHANGELOG={'Features':['New BETA button next to Settings. It shows the game version, lights up red after each update, and opens this changelog.'],
+ 'Balance':['Computer players no longer give up in their first few days, and very few quit before day 7.'],
+ 'Quality of Life':['Phones: pinch to magnify the map, separately from the map\'s own zoom levels.','Phones: the map now uses the full width of the screen.','Search on the Statistics page, for players or alliances. Results keep their real rank, and clicking a player\'s name shows them on the map.','Search on the map: type a player, a village name, or coordinates like 12|-7.','The build queue is now centred under your village.','The co-op badge moved to the bottom-right corner so it no longer covers the build queue.'],
+ 'Bug fixes':['Phones: tapping a map tile opened its details and closed them again straight away.','Computer players who should never quit were being marked as quit and stopped playing whenever the host\'s browser loaded the world from the online save. They\'re back, and it won\'t happen again.','A computer player who has stopped playing now only looks inactive (greyed out on the map, "looks inactive", grey status dot) after a week away.','Friends who joined without typing a name showed up as "Friend". They now show their username.','"Enter your current rank" tasks could reject the exact number shown on your Statistics page. The rank you see is now accepted.','The warning that a Taskmaster reward won\'t fit in your storage didn\'t appear on some tasks.']};
+function openChangelog(){if(S&&S.seenVer!==GAME_VER)markChangelogSeen();
+  openDlg(`What's new in v${GAME_VER}`,Object.entries(CHANGELOG).map(([h,L])=>`<h3 style="margin:12px 0 4px">${h}</h3>${L.length?`<ul style="margin:0;padding-left:20px">${L.map(x=>`<li style="margin:3px 0">${esc(x)}</li>`).join('')}</ul>`:''}`).join(''));renderTop()}
+function markChangelogSeen(){S.seenVer=GAME_VER;save()}
 // the Taskmaster button wears a red ring and a badge until it is opened the first time
 function markQuestSeen(){if(S.qSeen)return;S.qSeen=1;save()}
 
@@ -3729,7 +3798,9 @@ function npcTrade(){advance(Date.now());const tot=V.res.reduce((a,v)=>a+Math.flo
 
 /* ---------- alliance member list with online status (classic style) ---------- */
 const STATUS=[['#2e9e3e','Online now'],['#e3b51c','Online in the last 24 hours'],['#e07b1f','Online in the last 3 days'],['#c0392b','Online in the last 7 days'],['#8a8a8a','Not online for more than 7 days']];
-function statusOf(p){if(!p.active)return 4;if(!p.seen)return 4;const a=(Date.now()-p.seen)/3600000;return a<.25?0:a<24?1:a<72?2:a<168?3:4}
+// someone who stopped playing only looks inactive once they have been away a week
+function looksInactive(p){if(!p||p.active||p.nat)return false;const last=Math.max(p.seen||0,p.quit<Infinity?p.quit:0)||p.first||0;return Date.now()-last>7*86400000}
+function statusOf(p){if(looksInactive(p))return 4;if(!p.seen)return 4;const a=(Date.now()-p.seen)/3600000;return a<.25?0:a<24?1:a<72?2:a<168?3:4}
 const dot=i=>`<span title="${STATUS[i][1]}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${STATUS[i][0]};border:1px solid rgba(0,0,0,.35);vertical-align:middle"></span>`;
 /* ---------- alliance management: ranks with rights, invitations, removing members ---------- */
 const AL_RIGHTS=[['invite','Invite players'],['kick','Remove members'],['ranks','Set ranks and rights'],['desc','Edit the description'],['mail','Write to all members']];
@@ -3808,7 +3879,7 @@ function renderTop(){
              ['stat','Statistics',NAVICONS.stat],['rep','Reports',NAVICONS.rep],['msg','Messages',NAVICONS.msg]];
   const badge={rep:unread('reports'),msg:unread('msgs')};renderTop.k=badge.rep+'|'+badge.msg;
   document.getElementById('nav').innerHTML=nav.map(([k,t,ic,dis])=>
-    `<button class="navbtn${view===k?' active':''}${k==='man'&&S&&curQuest()&&curQuest().t==='Instructions'?' qhl':''}" ${dis?'disabled':''} onclick="setView('${k}')" aria-label="${t}">${ic}<span class="tip">${t}</span>${badge[k]?`<span class="nb">${badge[k]}</span>`:''}</button>`).join('')+`<button class="navbtn small sep${view==='man'?' active':''}${S&&curQuest()&&curQuest().t==='Instructions'?' qhl':''}" onclick="setView('man')" aria-label="Instructions">${NAVICONS.man}<span class="tip">Instructions</span></button>`+`<button class="navbtn small" onclick="openSettings()" aria-label="Settings">${NAVICONS.gear}<span class="tip">Settings</span></button>`+`<button class="navbtn small dev" onclick="testFinishAll()" aria-label="Finish everything now (testing)"><svg viewBox="0 0 46 46"><path d="M10 24 L19 33 L36 13" fill="none" stroke="#2e9e3e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tip">Finish all now (testing)</span></button>`;
+    `<button class="navbtn${view===k?' active':''}${k==='man'&&S&&curQuest()&&curQuest().t==='Instructions'?' qhl':''}" ${dis?'disabled':''} onclick="setView('${k}')" aria-label="${t}">${ic}<span class="tip">${t}</span>${badge[k]?`<span class="nb">${badge[k]}</span>`:''}</button>`).join('')+`<button class="navbtn small sep${view==='man'?' active':''}${S&&curQuest()&&curQuest().t==='Instructions'?' qhl':''}" onclick="setView('man')" aria-label="Instructions">${NAVICONS.man}<span class="tip">Instructions</span></button>`+`<button class="navbtn small" onclick="openSettings()" aria-label="Settings">${NAVICONS.gear}<span class="tip">Settings</span></button>`+`<button class="navbtn small betabtn${S&&S.seenVer!==GAME_VER?' qhl':''}" onclick="openChangelog()" aria-label="What's new"><b>BETA</b><span class="bv">v${GAME_VER}</span><span class="tip">What's new</span></button>`+`<button class="navbtn small dev" onclick="testFinishAll()" aria-label="Finish everything now (testing)"><svg viewBox="0 0 46 46"><path d="M10 24 L19 33 L36 13" fill="none" stroke="#2e9e3e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tip">Finish all now (testing)</span></button>`;
   renderBar();
 }
 // hover explanation for the crop balance
@@ -3894,7 +3965,7 @@ function render(){
   if(V.starved){toast(`${fmt(V.starved)} troops in ${V.name} deserted because there was no crop.`);V.starved=0;save()}
   renderQueue();
 }
-function setView(v){if(!['res','vil','map','stat','rep','msg','man','ally'].includes(v))return;view=v;S.pageSel=undefined;render()}
+function setView(v){if(!['res','vil','map','stat','rep','msg','man','ally'].includes(v))return;if(v!=='map'&&MAGN.s>1.01)magReset();view=v;S.pageSel=undefined;render()}
 function openPage(k,sel){view=k;S.pageSel=sel;render()}
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -4000,10 +4071,10 @@ function toast(msg){let t=document.getElementById('toast');if(!t){t=document.cre
   t.textContent=msg;t.className='show';clearTimeout(toast.h);toast.h=setTimeout(()=>t.className='',3000)}
 const isOwner=()=>!CO.on||CO.uid===CO.owner;
 function openSettings(){
-  if(!isOwner())return openDlg('Settings',`<label class="f">Player name</label><input type="text" id="pn" value="${esc(S.player)}">
+  if(!isOwner())return openDlg('Settings · Hearthwood v'+GAME_VER,`<label class="f">Player name</label><input type="text" id="pn" value="${esc(S.player)}">
    <div class="note">Game speed and opponents are set by the world's creator, ${esc(CO.owner||'')}.</div>
    <div style="margin-top:12px"><button class="btn" onclick="applySettings()">Save</button></div>`);
-  openDlg('Settings',`<label class="f">Game speed</label>
+  openDlg('Settings · Hearthwood v'+GAME_VER,`<label class="f">Game speed</label>
    <select id="spd">${[1,2,3,5,10,100].map(v=>`<option value="${v}" ${S.speed===v?'selected':''}>×${v}${v===1?' (classic)':v===100?' (testing)':''}</option>`).join('')}</select>
    <div class="note">Speed multiplies production and divides build times. Work already in progress keeps its finish time.</div>
    <label class="f">Player name</label><input type="text" id="pn" value="${esc(S.player)}">
@@ -4042,7 +4113,7 @@ function showStart(){
    <div class="note">At least half join right away and the rest over 3–5 days; half as many again arrive between days 5 and 21. About a third give up 5–21 days after they start. You start with beginner's protection.</div>
    ${FB_CONFIG?`<label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="coop" onchange="document.getElementById('copw').style.display=this.checked?'':'none'"> Play this world co-op with friends (online)</label>
    <div id="copw" style="display:none"><label class="f">World password (your friends will need it to join)</label><input type="text" id="copwi" maxlength="40" autocomplete="off"></div>`:''}
-   <div style="margin-top:14px"><button class="btn" onclick="beginGame()">Found village</button></div>`);
+   <div style="margin-top:14px;display:flex;align-items:end;justify-content:space-between"><button class="btn" onclick="beginGame()">Found village</button><span class="muted" style="font-size:12px">Hearthwood v${GAME_VER}</span></div>`);
   document.querySelector('#dlg .close').style.display='none';
 }
 let coopPw='';
