@@ -127,6 +127,8 @@ table.rep td{padding:5px 6px}
 .tabs{display:flex;gap:6px;margin-bottom:8px}
 .tabs button{color:#3d2f1e;border:1px solid var(--line);background:var(--paper-2);border-radius:4px 4px 0 0;padding:4px 10px}
 .tabs button.on{background:#fff;font-weight:bold;color:#3d2f1e}
+/* phones: no double-tap-to-zoom, so a single tap acts straight away (iPhone Safari otherwise holds or swallows quick taps) */
+html{touch-action:manipulation}
 .navbtn.qhl{z-index:25}
 .navbtn.betabtn{width:52px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;margin-left:8px}.navbtn.betabtn b{font-size:12px;letter-spacing:.5px;color:#7a2f1e}.navbtn.betabtn .bv{font-size:10px;color:#5a4a30}.navbtn.betabtn.qhl::after{border-radius:24px}
 .navbtn.small{width:40px;height:40px;align-self:center;border-width:3px}.navbtn.small svg{width:30px;height:30px}.navbtn.sep{margin-left:22px}
