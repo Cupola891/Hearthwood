@@ -141,6 +141,9 @@ select,input[type=text],option{font:inherit;padding:4px 6px;border:1px solid var
 .tribes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .tribes label{border:2px solid var(--line);border-radius:6px;padding:8px;cursor:pointer;background:#fff}
 .tribes input{display:none}
+.tribes ul.pc{margin:4px 0 0;padding-left:15px;font-size:11.5px;line-height:1.3}.tribes ul.pc li{margin:1px 0}.tribes ul.pro li::marker{content:'+ ';color:#3d7a1f;font-weight:bold}.tribes ul.con li::marker{content:'− ';color:#b23b2b;font-weight:bold}
+#dlg.wide{width:min(920px,100%)}
+.sgrid{display:grid;grid-template-columns:1.3fr 1.2fr 1fr 1.3fr;gap:10px;align-items:end}.sgrid input,.sgrid select{max-width:100%}
 .tribes input:checked+div{color:var(--ink)}
 .tribes label:has(input:checked){border-color:var(--accent);background:#fff6e6}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#3d2f1e;color:#fff;padding:10px 16px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:30}
@@ -294,6 +297,19 @@ const B = {
 41:{n:'Horse Drinking Trough',verified:true,c:[780,420,660,540],k:1.28,u:5,cp:3,t:{a:5950,k:1.16,b:3750},max:20,req:{16:10,20:20},tribe:'R',
     d:'Cavalry train 1% faster per level, and from levels 10, 15 and 20 Equites Legati, Imperatoris and Caesaris each eat one crop less. Romans only.'},
 };
+// what each people is good and bad at (classic T3 manual, checked against this game's numbers)
+const TRIBE_PC={
+ R:{tag:'Balanced builders with elite infantry',best:'Infantry',
+    pro:['Build a resource field and a village building at the same time','Strongest wall: +3% defence per level','Best infantry: Imperial Infantry attack 70, Praetorian 65 against infantry','Heavy Cavalry hits hardest of any horse: attack 180'],
+    con:['Troops cost more and take longer to train','Weaker defence against cavalry','City wall is the easiest to break with rams','Merchants carry 500 at 16 fields/h']},
+ G:{tag:'Fast, defensive and good traders',best:'Cavalry and defence',
+    pro:['Fastest troops: Thunder Rider 19 fields/h, Pathfinder 17','Best defenders: Phalanx is cheap, Druid Horseman 115 against infantry','Crannies hide twice as much, and the Trapper catches attackers','Merchants carry 750 at 24 fields/h; cheapest settlers'],
+    con:['Rams and trebuchets are the most expensive','Weak infantry attack: Swordsman 65','Palisade gives a middling bonus: +2.5% per level']},
+ T:{tag:'Cheap raiders who live off their neighbours',best:'Raiding infantry',
+    pro:['Cheapest, fastest-training troops: Clubswinger costs 250','Plunder: enemy crannies hide only two thirds against Teutons','Earth wall is the hardest to break with rams','Merchants carry 1000; Brewery celebrations add attack; cheapest rams and catapults'],
+    con:['Weakest defence of the three peoples','Earth wall gives the least defence: +2% per level','Slowest merchants (12 fields/h), weakest catapults and costliest settlers']}};
+function tribeCards(name,sel){return `<div class="tribes">${['R','G','T'].map(k=>{const t=TRIBES[k],c=TRIBE_PC[k];return `<label><input type="radio" name="${name}" value="${k}" ${k===(sel||'R')?'checked':''}><div><b>${t.n}</b><div class="note"><i>${c.tag}</i> · strongest in: <b>${c.best}</b></div>
+  <ul class="pc pro">${c.pro.map(x=>`<li>${x}</li>`).join('')}</ul><ul class="pc con">${c.con.map(x=>`<li>${x}</li>`).join('')}</ul></div></label>`}).join('')}</div>`}
 const TRIBES = {R:{n:'Romans',wall:31,info:'Builders can work on one resource field and one village building at the same time.'},
                 G:{n:'Gauls',wall:33,info:'Strong defenders and fast troops. Builders work on one project at a time.'},
                 T:{n:'Teutons',wall:32,info:'Fearsome raiders. Builders work on one project at a time.'}};
@@ -1618,26 +1634,27 @@ function embassySection(){
   let h='<h3 style="margin-top:12px">Alliance</h3>';
   if(S.ally&&S.ally===S.allyMine){
     h+=`<p>You lead <b><a href="#" onclick="closeDlg();setView('ally');return false">${esc(allyName(S.ally))}</a></b>: ${myAllyMembers()} of ${allyCap()} members (3 per level of your highest Embassy).</p>
-     <div class="note">To invite a neighbour, click their village on the map and choose "Invite to your alliance".</div>
+     <div class="note">Invite players, set ranks and remove members on the <a href="#" onclick="closeDlg();setView('ally');return false">alliance page</a>, or click a village on the map and choose "Invite to your alliance".</div>
      <p><a href="#" onclick="if(this.dataset.armed){disbandAlly()}else{this.dataset.armed=1;this.textContent='Click again to disband the alliance'}return false">Disband the alliance</a></p>`;
-  }else if(S.ally)h+=`<p>You are a member of <b><a href="#" onclick="closeDlg();setView('ally');return false">${esc(allyName(S.ally))}</a></b>. Leave it from the Messages page if you want to found your own.</p>`;
+  }else if(S.ally)h+=`<p>You are a member of <b><a href="#" onclick="closeDlg();setView('ally');return false">${esc(allyName(S.ally))}</a></b>. Leave it from the alliance page if you want to found your own.</p>`;
   else if(lvl(18)<3)h+=`<p>Join an alliance by accepting an invitation in your Messages. To <b>found</b> your own, this Embassy needs level 3.</p>`;
   else h+=`<div class="bopt"><div class="nm">Found an alliance</div><div style="display:flex;gap:6px;align-items:center"><input type="text" id="alname" maxlength="24" placeholder="Alliance name" style="width:200px"> <button class="btn" onclick="foundAlly()">Found</button></div><div class="note">You can invite up to 3 members per Embassy level. Or accept an invitation in your Messages instead.</div></div>`;
   return h;
 }
 function foundAlly(){const n=document.getElementById('alname').value.trim().slice(0,24);if(!n)return toast('Give your alliance a name.');
   if(S.ai.alli.some(a=>a.name.toLowerCase()===n.toLowerCase()))return toast('That name is taken.');
-  const id='my'+Date.now();S.ai.alli.push({id,name:n,x:V.x,y:V.y,members:1,mine:1});S.ally=id;S.allyMine=id;save();render();openSlot(dlgState.k);toast(`You founded ${n}.`)}
-function disbandAlly(){if(S.ally!==S.allyMine)return;for(const p of S.ai.players)if(p.ally===S.ally)p.ally=null;S.ai.alli=S.ai.alli.filter(a=>a.id!==S.ally);S.ally=null;S.allyMine=null;S.invites=[];save();closeDlg();render();toast('The alliance is disbanded.')}
-function inviteToAlly(pid){const p=aiP(pid);if(!p||S.ally!==S.allyMine)return;
-  if(myAllyMembers()+(S.invites||[]).length>=allyCap())return toast('Your alliance is full. Upgrade your Embassy for more room.');
+  const id='my'+Date.now();S.ai.alli.push({id,name:n,x:V.x,y:V.y,members:1,mine:1,lead:myPid(),ranks:{},desc:''});S.ally=id;S.allyMine=id;save();render();openSlot(dlgState.k);toast(`You founded ${n}.`)}
+function disbandAlly(){if(!isLeader())return;const nm=allyName(S.ally);for(const p of S.ai.players)if(p.ally===S.ally){p.ally=null;if(p.human)asHuman(p.uid,()=>addMsg(meName(),`${esc(nm)} has been disbanded.`))}S.ai.alli=S.ai.alli.filter(a=>a.id!==S.ally);S.ally=null;S.allyMine=null;S.invites=[];save();closeDlg();render();toast('The alliance is disbanded.')}
+function inviteToAlly(pid){const p=aiP(pid),a=myAlly();if(!p||!a||!canA('invite'))return;if(p.ally===S.ally)return toast(`${p.name} is already a member.`);
+  if(myAllyMembers()+(S.invites||[]).length>=allyRoom(a))return toast('The alliance is full. The leader needs a higher Embassy for more room.');
+  if(p.human){const from=meName(),id=S.ally;asHuman(p.uid,()=>addMsg(from,`${esc(from)} invites you to join ${esc(allyName(id))}.`,{invite:id}));save();closeDlg();if(view==='ally')render();return toast(`Invitation sent to ${p.name}.`)}
   S.invites=S.invites||[];if(S.invites.some(i=>i.pid===pid))return toast('You already invited them.');
-  S.invites.push({pid,t:Date.now()+(0.5+Math.random()*5.5)*3600000/Math.max(1,S.speed/3)});save();closeDlg();toast(`Invitation sent to ${p.name}.`)}
+  S.invites.push({pid,t:Date.now()+(0.5+Math.random()*5.5)*3600000/Math.max(1,S.speed/3)});save();closeDlg();if(view==='ally')render();toast(`Invitation sent to ${p.name}.`)}
 function aiInviteReplies(now){if(!S.invites||!S.invites.length)return;
-  for(const inv of [...S.invites]){if(inv.t>now)continue;S.invites=S.invites.filter(x=>x!==inv);const p=aiP(inv.pid);if(!p||!p.vids.length||S.ally!==S.allyMine)continue;
+  for(const inv of [...S.invites]){if(inv.t>now)continue;S.invites=S.invites.filter(x=>x!==inv);const p=aiP(inv.pid);if(!p||!p.vids.length||!S.ally)continue;
     const v=S.ai.vil[p.vids[0]],d=dist(v,capVil()),base={casual:.7,builder:.6,expander:.55,defender:.6,raider:.4,veteran:.35}[p.pers]||.5;
     let ch=base*(p.ally?.25:1)*Math.max(.2,1-d/30)*((p.angry||0)>0?.3:1);
-    if(myAllyMembers()>=allyCap())ch=0;
+    {const a=myAlly();if(!a||myAllyMembers()>=allyRoom(a))ch=0}
     if(Math.random()<ch){if(p.ally){const old=S.ai.alli.find(a=>a.id===p.ally);if(old)old.members--}p.ally=S.ally;const a=S.ai.alli.find(x=>x.id===S.ally);if(a)a.members++;
       addMsg(p.name,`Thanks for the invitation. I'm happy to join ${esc(allyName(S.ally))}.`)}
     else addMsg(p.name,p.ally?`Thanks, but I'm staying with ${esc(allyName(p.ally))}.`:'Thanks for asking, but I\'d rather go it alone for now.')}}
@@ -1773,7 +1790,7 @@ function tileInfo(x,y){
   if(av){const p=aiP(av.pid);
     h+=`<p><b>${esc(av.name)}</b> belongs to <b>${esc(p.name)}</b> (${TRIBES[p.tribe].n}${p.ally?`, ${esc(allyName(p.ally))}`:''})${p.active?'':' — <i>looks inactive</i>'}.</p><p>Population ${aiPop(av)} · player has ${p.vids.length} village(s).</p>`;
     if(av.loy<100)h+=`<p>Loyalty: <b>${Math.floor(av.loy)}%</b></p>`;
-    if(S.ally&&S.ally===S.allyMine&&p.ally!==S.ally)h+=`<p><button class="btn grey" onclick="inviteToAlly('${p.id}')">Invite to your alliance</button></p>`;
+    if(S.ally&&canA('invite')&&p.ally!==S.ally)h+=`<p><button class="btn grey" onclick="inviteToAlly('${p.id}')">Invite to your alliance</button></p>`;
     if(S.ally&&p.ally===S.ally)h+='<p>This player is in your alliance.</p>';
     else h+=`<button class="btn" onclick="sendDialog(${x},${y},'raid')">Raid</button> <button class="btn" onclick="sendDialog(${x},${y},'attack')">Attack</button> <button class="btn grey" onclick="sendDialog(${x},${y},'scout')">Scout</button>`;
     openDlg(esc(av.name),h);return}
@@ -2143,7 +2160,7 @@ const CO={sid:Math.random().toString(36).slice(2),pub:null,on:false,role:null,ui
 const humanP=uid=>S&&S.ai&&S.ai.players.find(p=>p.uid===uid);
 const isHumanPid=pid=>typeof pid==='string'&&pid.startsWith('h_');
 // park the human on top (S.villages, S.hero, ...) in their player entry, so the world holds every human the same way
-function stash(){if(!S.me)return;const p=humanP(S.me);for(const k of HK)p[k]=S[k];p.vids=[];
+function stash(){if(!S.me)return;const p=humanP(S.me);for(const k of HK)p[k]=S[k];if(S.player&&S.player!=='You')p.name=S.player;p.vids=[];
   for(const v of S.villages){v.pid=p.id;v.tribe=p.tribe;S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id;p.vids.push(v.id);aiDerive(v)}
   S.villages=[];S.me=null;_grid=null}
 function unstash(uid){const p=humanP(uid);if(!p)return;S.villages=p.vids.map(id=>S.ai.vil[id]).filter(Boolean);
@@ -2164,7 +2181,7 @@ function newHuman(uid,name,tribe,quad,t){
   const sp=spawnSpot(quad||''),v=makeVillage('New village',sp.x,sp.y,layoutFor(3),true,t);v.pid=p.id;v.tribe=tribe;
   S.ai.vil[v.id]=v;S.ai.at[sp.x+','+sp.y]=v.id;p.vids.push(v.id);p.mapC={x:sp.x,y:sp.y};aiDerive(v);return p}
 /* ---------- orders: the host replays a friend's click with the inputs they had filled in ---------- */
-const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
+const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
 function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
@@ -2195,7 +2212,7 @@ async function readSnap(){const s=(await CO.db.ref(`worlds/${CO.wid}/snap`).get(
 function involves(m,ids,xy){return ids.has(m.from)||ids.has(m.to)||ids.has(m.mv)||xy.has(m.x+','+m.y)}
 function humanState(uid){return asHuman(uid,()=>{const ids=new Set(S.villages.map(v=>v.id)),xy=new Set(S.villages.map(v=>v.x+','+v.y)),p={};
   for(const k of HK)p[k]=S[k];p.reports=(S.reports||[]).slice(0,150);
-  return {p,villages:S.villages,moves:S.moves.filter(m=>involves(m,ids,xy)),oases:Object.fromEntries(Object.entries(S.oases||{}).filter(([k,o])=>ids.has(o.owner))),ack:CO.ackOf[uid]||0,t:Date.now()}})}
+  return {p,villages:S.villages,moves:S.moves.filter(m=>involves(m,ids,xy)),oases:Object.fromEntries(Object.entries(S.oases||{}).filter(([k,o])=>ids.has(o.owner))),ack:CO.ackOf[uid]||0,t:Date.now(),al:S.ally?{a:S.ai.alli.find(x=>x.id===S.ally)||null,mem:S.ai.players.filter(x=>x.ally===S.ally).map(x=>x.id)}:null}})}
 function humanTick(now){for(const p of S.ai.players){if(!p.human||p.uid===S.me)continue;
   asHuman(p.uid,()=>{S.villages.forEach(v=>withV(v,()=>advanceV(now)));accrueCP(now);heroTick(now);regenMyLoyalty(now);aiSocial(now);aiInviteReplies(now)})}}
 async function publishHS(){if(CO.role!=='host')return;const upd={};for(const p of S.ai.players.filter(p=>p.human).concat(S.me?[humanP(S.me)]:[])){if(!p)continue;upd[p.uid]=JSON.stringify(humanState(p.uid))}
@@ -2206,6 +2223,7 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   for(const k of HK)S[k]=hs.p[k];Object.assign(S,keep);S.reports.forEach(r=>{if(rd.has(r.id))r.read=true});S.msgs.forEach(r=>{if(md.has(r.id))r.read=true});
   S.villages=hs.villages;const ids=new Set(S.villages.map(v=>v.id)),xy=new Set(S.villages.map(v=>v.x+','+v.y));
   S.moves=S.moves.filter(m=>!involves(m,ids,xy)).concat(hs.moves);for(const k in hs.oases)S.oases[k]=hs.oases[k];_oasC=null;
+  if(hs.al&&hs.al.a&&S.ai){const a=hs.al.a,i=S.ai.alli.findIndex(x=>x.id===a.id);if(i>=0)S.ai.alli[i]=a;else S.ai.alli.push(a);const mem=new Set(hs.al.mem);for(const x of S.ai.players){if(mem.has(x.id))x.ally=a.id;else if(x.ally===a.id)x.ally=null}}
   S.cur=Math.min(S.cur||0,S.villages.length-1);V=S.villages[S.cur];
   CO.pending=CO.pending.filter(a=>a.k>hs.ack);for(const a of CO.pending)replay(a);
   if(!dragActive())render()}
@@ -2272,7 +2290,7 @@ function signInForm(err){return new Promise(res=>{CO._signRes=res;showNet('');
    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" onclick="doSignIn(false)">Sign in</button><button class="btn grey" onclick="doSignIn(true)">Create account</button></div>
    <p class="muted" style="font-size:12px">Forgot your password? Ask whoever runs the game to delete your account in Firebase, then create it again with the same username: your villages come back.</p>`);
   const c=document.querySelector('#dlg .close');if(c)c.style.display='none'})}
-async function doSignIn(create){const u=slugU(document.getElementById('su_name').value),pw=document.getElementById('su_pw').value,er=document.getElementById('suerr');
+async function doSignIn(create){CO.uname=(document.getElementById('su_name').value||'').trim().slice(0,20);const u=slugU(document.getElementById('su_name').value),pw=document.getElementById('su_pw').value,er=document.getElementById('suerr');
   if(u.length<3){er.textContent='Usernames need at least 3 letters or numbers.';return}if(pw.length<6){er.textContent='Passwords need at least 6 characters.';return}
   const email=u+'@hearthwood.game';
   try{if(create)await firebase.auth().createUserWithEmailAndPassword(email,pw);else await firebase.auth().signInWithEmailAndPassword(email,pw)}
@@ -2290,6 +2308,7 @@ function applyRelinks(rl){for(const old in rl||{}){const p=S.ai.players.find(x=>
 // the person who creates a co-op world becomes its first human and host
 async function coopCreate(pw){if(!await fbInit())return toast('Co-op needs the Firebase settings in the game file.');
   CO.on=true;CO.pub=Math.random().toString(36).slice(2,10);CO.wid=await worldKey(CO.pub,pw);try{localStorage.setItem('hw-pw-'+CO.pub,pw)}catch(e){}wrapActions();
+  if(!S.player||S.player==='You')S.player=CO.uname||CO.uid;
   const pv=S.villages[0],p={id:'h_'+CO.uid,uid:CO.uid,name:S.player,tribe:S.tribe,human:true,active:true,joined:true,pers:'veteran',skill:1,vids:[],join:S.created,quit:Infinity};
   S.ai.players.push(p);_pcacheFor=null;S.me=CO.uid;CO.owner=CO.uid;
   await CO.db.ref(`worlds/${CO.wid}/meta`).set({created:S.created,speed:S.speed,owner:CO.uid,humans:{[CO.uid]:S.player}});
@@ -2307,13 +2326,13 @@ async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the
 function coopPwForm(pub,err){openDlg('This world is password protected',`${err?`<p class="bad">${err}</p>`:''}<label class="f">World password</label><input type="password" id="wpw" maxlength="40" onkeydown="if(event.key==='Enter')coopPwGo('${pub}')">
   <div style="margin-top:12px"><button class="btn" onclick="coopPwGo('${pub}')">Enter</button></div>`);const c=document.querySelector('#dlg .close');if(c)c.style.display='none'}
 function coopPwGo(pub){const pw=document.getElementById('wpw').value.trim();closeDlg();coopBoot(pub,pw)}
-function coopJoinForm(meta){openDlg('Join this world',`<p>A world at speed ×${meta.speed}, day ${Math.floor((Date.now()-meta.created)/(86400000/meta.speed))+1}.</p>
+function coopJoinForm(meta){openDlg.wide=true;openDlg('Join this world',`<p>A world at speed ×${meta.speed}, day ${Math.floor((Date.now()-meta.created)/(86400000/meta.speed))+1}.</p>
   <label class="f">Your name</label><input type="text" id="jn" maxlength="20" value="">
-  <label class="f">Tribe</label><select id="jt">${['R','G','T'].map(k=>`<option value="${k}">${TRIBES[k].n}</option>`).join('')}</select>
+  <label class="f">Tribe</label>${tribeCards('jt')}
   <label class="f">Start in</label><select id="jq"><option value="">A random quadrant</option><option value="++">North-east (+|+)</option><option value="+-">South-east (+|−)</option><option value="--">South-west (−|−)</option><option value="-+">North-west (−|+)</option></select>
   <div style="margin-top:12px"><button class="btn" onclick="coopJoin()">Join</button></div>`)}
 async function coopJoin(){const name=(document.getElementById('jn').value||'').trim()||'Friend';
-  CO.join={uid:CO.uid,name,tribe:document.getElementById('jt').value,quad:document.getElementById('jq').value,t:Date.now()};
+  CO.join={uid:CO.uid,name,tribe:document.querySelector('input[name=jt]:checked').value,quad:document.getElementById('jq').value,t:Date.now()};
   await CO.db.ref(`worlds/${CO.wid}/joins/${CO.uid}`).set(CO.join);
   closeDlg();showNet('Joining… waiting for the host');
   // nobody hosting? then this browser hosts and lets itself in
@@ -2848,6 +2867,7 @@ function aiCatchUp(now){
 
 /* ---------- combat ---------- */
 const WALLB={31:.03,32:.02,33:.025}; // wall: defence ×(1+b)^level
+const WALLD={31:1,32:5,33:2};          // durability against rams: city wall 1, earth wall 5, palisade 2
 const isCav=(tribe,u)=>tribe!=='N'&&UNITS[tribe][u].b===20;
 function unitStat(tribe,u){return tribe==='N'?ANIMALS[u]:UNITS[tribe][u]}
 // att: {tribe, units, hero}, defs: [{tribe, units}], wall: {b,l}, raid
@@ -2877,8 +2897,8 @@ function battle(att,defs,wall,raid,opt={}){
   const finalDef=l=>(baseDef+10+(opt.resDef||0))*(wb?wallBonus(wb,l):1);
   let def=finalDef(wl),mor=moraleF(opt.offPop,opt.defPop,off/def),offF=off*mor,ratio=offF/Math.max(1e-9,def);
   if(!raid&&opt.rams&&wl>0){
-    wl=wallInBattle(wl,demPts(opt.rams,ratio,opt.dur||1),1);def=finalDef(wl);mor=moraleF(opt.offPop,opt.defPop,off/def);offF=off*mor;ratio=offF/Math.max(1e-9,def);
-    newWall=demolish(wall.l,demPts(opt.rams,ratio,opt.dur||1));
+    wl=wallInBattle(wl,demPts(opt.rams,ratio,(opt.dur||1)*(WALLD[wall.b]||1)),1);def=finalDef(wl);mor=moraleF(opt.offPop,opt.defPop,off/def);offF=off*mor;ratio=offF/Math.max(1e-9,def);
+    newWall=demolish(wall.l,demPts(opt.rams,ratio,(opt.dur||1)*(WALLD[wall.b]||1)));
   }
   const x=Math.pow(ratio,K);let aL,dL;
   if(raid){aL=1/(1+x);dL=x/(1+x)}else{aL=Math.min(1/x,1);dL=Math.min(x,1)}
@@ -3056,7 +3076,7 @@ function playerAttackArrive(m){
     for(const g of tgt.reinf||[]){const l=applyLoss(g.units,r.dL);g.units=subUnits(g.units,l);for(const u in l)xp+=l[u]*UNITS[g.tribe][u].up}if(tgt.reinf)tgt.reinf=tgt.reinf.filter(g=>sumUnits(g.units)>0);
     if(trapped)extra+=unitTable(TR(),trapped,{},'Caught in their traps');
     if(sumUnits(surv)>0&&r.win||raid&&sumUnits(surv)>0){
-      loot=takeLoot(tgt.res,cr,carry(TR(),surv));for(let i=0;i<4;i++)tgt.res[i]-=loot[i];
+      loot=takeLoot(tgt.res,cr*(TR()==='T'?2/3:1),carry(TR(),surv));for(let i=0;i<4;i++)tgt.res[i]-=loot[i];
     }
     if(!raid&&r.win&&tgt)extra+=tryCapture(tgt,fromV,heroOk,t);
     if(!raid&&r.win){
@@ -3132,7 +3152,7 @@ function aiRaidArrive(m){
   if(ah){aiHeroHurt(ap,r.aL);let x=0;for(const [tr,l] of allLost)x+=xpFrom(tr,l);aiHeroXp(ap,x)}
   if(dh){if(mine){heroDamage(r.dL);if(S.hero.state!=='dead')heroGainXp(xpFrom(m.tribe,aLost))}else{aiHeroHurt(wp,r.dL);aiHeroXp(wp,xpFrom(m.tribe,aLost))}}
   let loot=[0,0,0,0],extra='';
-  if(sumUnits(surv)&&(raid||r.win)){loot=withV(w,()=>takeLoot(w.res,crannyCap(),carry(m.tribe,surv)));for(let i=0;i<4;i++)w.res[i]-=loot[i]}
+  if(sumUnits(surv)&&(raid||r.win)){loot=withV(w,()=>takeLoot(w.res,crannyCap()*(m.tribe==='T'?2/3:1),carry(m.tribe,surv)));for(let i=0;i<4;i++)w.res[i]-=loot[i]}
   if(!raid&&r.win){
     const U=UNITS[m.tribe];
     if(rams&&wl>0){w.slots.wall.l=r.newWall;extra+=r.newWall<wl?`<p>Rams knocked ${wn} wall down from level ${wl} to ${r.newWall}.</p>`:'<p>The rams did not damage the wall.</p>'}
@@ -3186,17 +3206,17 @@ function pageMessages(){
   const L=S.msgs||[];L.forEach(m=>m.read=true);save();
   return `<div class="board"><h2 style="margin:0 0 8px">Messages</h2>${L.length?L.map(m=>`<div class="bopt"><div class="nm">${esc(m.from)} <span class="muted" style="font-weight:normal;font-size:12px">${new Date(m.t).toLocaleString()}</span></div><div>${m.text}</div>
     ${m.extra&&m.extra.invite&&!S.ally?`<button class="btn" onclick="joinAlliance('${m.extra.invite}')">Join ${esc(allyName(m.extra.invite))}</button>`:''}</div>`).join(''):'<p class="muted">No messages yet.</p>'}
-   ${S.ally?`<p>You are a member of <b><a href="#" onclick="setView('ally');return false">${esc(allyName(S.ally))}</a></b>. Its members won't attack you. <a href="#" onclick="if(S.ally===S.allyMine){disbandAlly()}else{S.ally=null}save();openPage('msg');return false">${S.ally===S.allyMine?'Disband alliance':'Leave alliance'}</a></p>`:''}</div>`;
+   ${S.ally?`<p>You are a member of <b><a href="#" onclick="setView('ally');return false">${esc(allyName(S.ally))}</a></b>. Its members won't attack you. <a href="#" onclick="setView('ally');return false">Manage or leave the alliance</a></p>`:''}</div>`;
 }
 const ALLY_A=['Iron','Red','Silver','Golden','Stone','Night','Grey','River','Old','Copper','Amber','Hollow','Black','Sun','Moon','Storm','Ash','Oak','Frost','Ember','High','Deep','Wild','White'],ALLY_B=['Oaks','Hearth','Ford','Crown','Circle','Owls','Wolves','Pact','Guard','Hill','Field','Pines','Mill','Banner','Shield','Legion','Tower','Gate','Hounds','Ravens','Keep','Vale','Watch','Brothers'];
 function allyNew(x,y,lead){const A=S.ai,i=A.alli.length,n=i<ALLY.length?ALLY[i]:`${ALLY_A[i%ALLY_A.length]} ${ALLY_B[Math.floor(i/ALLY_A.length)%ALLY_B.length]}${i>=ALLY_A.length*ALLY_B.length?' '+(Math.floor(i/(ALLY_A.length*ALLY_B.length))+1):''}`;const al={id:'al'+i,name:n,x,y,members:1,lead:lead||null};A.alli.push(al);return al}
 // room in an alliance: 3 members per level of the leader's highest Embassy, for everyone
 let _alCap=null;
-function allyRoom(a){if(a.mine)return allyCap();const lp=a.lead&&aiP(a.lead);if(!lp)return 60;
+function allyRoom(a){if(a.lead===myPid()||(a.mine&&!a.lead))return allyCap();const lp=a.lead&&aiP(a.lead);if(!lp)return 60;
   if(_alCap&&_alCap.has(a.id))return _alCap.get(a.id);
   let e=0;for(const id of lp.vids){const v=S.ai.vil[id];if(v)e=Math.max(e,withV(v,()=>lvl(18)))}const c=3*e;if(_alCap)_alCap.set(a.id,c);return c}
 const allyName=id=>{if(!S.ai)return '?';const i=+String(id).slice(2),a=S.ai.alli[i]&&S.ai.alli[i].id===id?S.ai.alli[i]:S.ai.alli.find(x=>x.id===id);return a?a.name:'?'};
-function joinAlliance(id){if(withV(V,()=>lvl(18))<1&&!S.villages.some(v=>withV(v,()=>lvl(18))>0))return toast('You need an Embassy to join an alliance.');{const a=S.ai.alli.find(x=>x.id===id);if(a&&a.members>=allyRoom(a))return toast(allyName(id)+' is full.')}S.ally=id;save();toast('You joined '+allyName(id)+'.');openPage('msg')}
+function joinAlliance(id){if(withV(V,()=>lvl(18))<1&&!S.villages.some(v=>withV(v,()=>lvl(18))>0))return toast('You need an Embassy to join an alliance.');{const a=S.ai.alli.find(x=>x.id===id);if(a&&a.members>=allyRoom(a))return toast(allyName(id)+' is full.')}S.ally=id;{const a=S.ai.alli.find(x=>x.id===id);if(a)a.members=(a.members||0)+1}S.msgs=(S.msgs||[]).filter(m=>!(m.extra&&m.extra.invite));save();toast('You joined '+allyName(id)+'.');openPage('ally')}
 let statTab='pl';
 function pageStats(){
   const rows=[];
@@ -3585,19 +3605,76 @@ function npcTrade(){advance(Date.now());const tot=V.res.reduce((a,v)=>a+Math.flo
 const STATUS=[['#2e9e3e','Online now'],['#e3b51c','Online in the last 24 hours'],['#e07b1f','Online in the last 3 days'],['#c0392b','Online in the last 7 days'],['#8a8a8a','Not online for more than 7 days']];
 function statusOf(p){if(!p.active)return 4;if(!p.seen)return 4;const a=(Date.now()-p.seen)/3600000;return a<.25?0:a<24?1:a<72?2:a<168?3:4}
 const dot=i=>`<span title="${STATUS[i][1]}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${STATUS[i][0]};border:1px solid rgba(0,0,0,.35);vertical-align:middle"></span>`;
+/* ---------- alliance management: ranks with rights, invitations, removing members ---------- */
+const AL_RIGHTS=[['invite','Invite players'],['kick','Remove members'],['ranks','Set ranks and rights'],['desc','Edit the description'],['mail','Write to all members']];
+const myPid=()=>S.me?'h_'+S.me:'me';
+const meName=()=>S.player&&S.player!=='You'?S.player:(S.me||'A friend');
+const myAlly=()=>S.ally&&S.ai?S.ai.alli.find(a=>a.id===S.ally):null;
+function isLeader(){const a=myAlly();return !!a&&(a.lead?a.lead===myPid():S.allyMine===S.ally)}
+function canA(r){if(isLeader())return true;const a=myAlly(),k=a&&a.ranks&&a.ranks[myPid()];return !!(k&&k.r&&k.r[r])}
+function allyMembers(){const a=myAlly(),out=[];if(!a)return out;
+  for(const p of S.ai.players)if(p.ally===S.ally&&p.vids.length)out.push({pid:p.id,p,n:p.name,pop:p.vids.reduce((x,id)=>x+(S.ai.vil[id]?aiPop(S.ai.vil[id]):0),0),v:p.vids.length,st:statusOf(p),t:p.tribe,human:!!p.human});
+  out.push({pid:myPid(),n:S.player==='You'?'You':S.player+' (you)',pop:S.villages.reduce((x,v)=>x+withV(v,pop),0),v:S.villages.length,st:0,t:TR(),me:1,human:true});
+  const lead=a.lead||(S.allyMine===S.ally?myPid():null);
+  for(const r of out){r.lead=r.pid===lead;const k=a.ranks&&a.ranks[r.pid];r.title=r.lead?'Leader':(k&&k.title)||'Member';r.rights=r.lead?AL_RIGHTS.map(x=>x[0]):k&&k.r?Object.keys(k.r).filter(x=>k.r[x]):[]}
+  return out.sort((x,y)=>y.pop-x.pop)}
 function pageAlly(){
-  if(!S.ally)return `<div class="board"><h2 style="margin:0 0 6px">Alliance</h2><p>You are not in an alliance. Build an Embassy and accept an invitation from your Messages.</p></div>`;
-  const rows=[];
-  if(S.ai)for(const p of S.ai.players)if(p.ally===S.ally&&p.vids.length)rows.push({n:p.name,pop:p.vids.reduce((a,id)=>a+aiPop(S.ai.vil[id]),0),v:p.vids.length,st:statusOf(p),t:p.tribe});
-  rows.push({n:S.player==='You'?'You':S.player+' (you)',pop:S.villages.reduce((a,v)=>a+withV(v,pop),0),v:S.villages.length,st:0,t:TR(),me:1});
-  rows.sort((a,b)=>b.pop-a.pop);
-  const tot=rows.reduce((a,r)=>a+r.pop,0);
-  return `<div class="board"><h2 style="margin:0 0 4px">${esc(allyName(S.ally))}</h2><p class="muted" style="margin:0 0 8px">${rows.length} members · population ${fmt(tot)}</p>
-   <table class="lv" style="width:auto;min-width:460px"><tr><th>#</th><th></th><th style="text-align:left">Player</th><th>Tribe</th><th>Villages</th><th>Population</th></tr>
-   ${rows.map((r,i)=>`<tr style="${r.me?'background:#fff2cc;font-weight:bold':''}"><td>${i+1}</td><td>${dot(r.st)}</td><td style="text-align:left">${esc(r.n)}</td><td>${TRIBES[r.t].n}</td><td>${r.v}</td><td>${fmt(r.pop)}</td></tr>`).join('')}</table>
-   <div style="margin-top:10px;font-size:12px;display:flex;gap:14px;flex-wrap:wrap">${STATUS.map((x,i)=>`<span>${dot(i)} ${x[1]}</span>`).join('')}</div>
-   <p style="margin-top:10px"><a href="#" onclick="setView('msg');return false">Messages and invitations</a></p></div>`;
+  if(!S.ally)return `<div class="board"><h2 style="margin:0 0 6px">Alliance</h2><p>You are not in an alliance. Build an Embassy and accept an invitation from your Messages, or found your own with a level 3 Embassy.</p></div>`;
+  const a=myAlly();if(!a)return `<div class="board"><p>This alliance no longer exists.</p></div>`;
+  const rows=allyMembers(),tot=rows.reduce((x,r)=>x+r.pop,0),room=allyRoom(a),lead=isLeader(),mine=rows.find(r=>r.me);
+  const manage=canA('ranks')||canA('kick');
+  const inv=(S.invites||[]).map(i=>({i,p:aiP(i.pid)})).filter(x=>x.p);
+  const leadRow=rows.find(r=>r.lead);
+  return `<div class="board" style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:18px;align-items:start">
+   <div><h2 style="margin:0 0 4px">${esc(a.name)}</h2><p class="muted" style="margin:0 0 6px">${rows.length} of ${room} members · population ${fmt(tot)} · led by ${leadRow?esc(leadRow.n):'nobody'} · room is 3 members per level of the leader's Embassy</p>
+   ${a.desc?`<div class="note" style="white-space:pre-wrap;margin:0 0 8px;border-left:3px solid var(--line);padding-left:8px">${esc(a.desc)}</div>`:''}
+   <div style="max-height:calc(100vh - 260px);overflow:auto"><table class="lv" style="width:100%"><tr><th>#</th><th></th><th style="text-align:left">Player</th><th style="text-align:left">Rank</th><th>Tribe</th><th>Villages</th><th>Population</th>${manage?'<th></th>':''}</tr>
+   ${rows.map((r,i)=>`<tr style="${r.me?'background:#fff2cc;font-weight:bold':''}"><td>${i+1}</td><td>${dot(r.st)}</td><td style="text-align:left">${esc(r.n)}${r.human&&!r.me?' <span class="muted">(friend)</span>':''}</td><td style="text-align:left" title="${esc(r.rights.map(x=>AL_RIGHTS.find(y=>y[0]===x)[1]).join(', ')||'No special rights')}">${esc(r.title)}</td><td>${TRIBES[r.t].n}</td><td>${r.v}</td><td>${fmt(r.pop)}</td>
+     ${manage?`<td>${!r.me&&!r.lead?`<a href="#" onclick="rankDlg('${r.pid}');return false">Manage</a>`:''}</td>`:''}</tr>`).join('')}</table></div>
+   <div style="margin-top:8px;font-size:12px;display:flex;gap:14px;flex-wrap:wrap">${STATUS.map((x,i)=>`<span>${dot(i)} ${x[1]}</span>`).join('')}</div></div>
+   <div>
+    <p style="margin-top:0">Your rank: <b>${esc(mine.title)}</b>${mine.rights.length&&!lead?` (${mine.rights.map(x=>AL_RIGHTS.find(y=>y[0]===x)[1].toLowerCase()).join(', ')})`:''}</p>
+    ${canA('invite')?`<h3 style="margin:14px 0 6px">Invite a player</h3><div style="display:flex;gap:6px"><input type="text" id="alinv" placeholder="Player name" maxlength="30" style="flex:1" onkeydown="if(event.key==='Enter')inviteByName()"> <button class="btn" onclick="inviteByName()">Invite</button></div>
+     ${inv.length?`<div class="note" style="margin-top:6px">Waiting for an answer: ${inv.map(x=>`${esc(x.p.name)} <a href="#" onclick="cancelInvite('${x.p.id}');return false">cancel</a>`).join(' · ')}</div>`:''}`:''}
+    ${canA('desc')?`<h3 style="margin:14px 0 6px">Description</h3><textarea id="aldesc" rows="3" maxlength="400" style="width:100%">${esc(a.desc||'')}</textarea><button class="btn grey" onclick="saveAllyDesc()">Save description</button>`:''}
+    ${canA('mail')?`<h3 style="margin:14px 0 6px">Write to all members</h3><textarea id="almail" rows="3" maxlength="600" style="width:100%" placeholder="Your friends in the alliance get this in their Messages"></textarea><button class="btn grey" onclick="allyMail()">Send</button>`:''}
+    <h3 style="margin:14px 0 6px">Leave</h3>${lead?`<p class="note">As leader you can hand the alliance to another member (Manage, then "Make leader") before leaving, or disband it.</p>
+      <p><a href="#" onclick="if(this.dataset.armed){disbandAlly()}else{this.dataset.armed=1;this.textContent='Click again to disband the alliance'}return false">Disband the alliance</a>${rows.length>1?'':` · <a href="#" onclick="leaveAlly();return false">Leave</a>`}</p>`
+      :`<p><a href="#" onclick="if(this.dataset.armed){leaveAlly()}else{this.dataset.armed=1;this.textContent='Click again to leave'}return false">Leave the alliance</a></p>`}
+   </div></div>`;
 }
+function rankDlg(pid){const a=myAlly(),r=allyMembers().find(x=>x.pid===pid);if(!a||!r)return;const k=(a.ranks&&a.ranks[pid])||{};
+  let h=`<p><b>${esc(r.n)}</b> · ${TRIBES[r.t].n} · ${r.v} village(s) · population ${fmt(r.pop)}</p>`;
+  if(canA('ranks'))h+=`<label class="f">Rank title</label><input type="text" id="rkt" maxlength="20" value="${esc(k.title||'')}" placeholder="Member">
+    <label class="f">Rights</label>${AL_RIGHTS.map(([x,t])=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rk_${x}" ${k.r&&k.r[x]?'checked':''}> ${t}</label>`).join('')}
+    <div style="margin-top:10px"><button class="btn" onclick="setRank('${pid}')">Save rank</button></div>`;
+  h+=`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">${canA('kick')?`<button class="btn" style="background:#b23b2b;border-color:#8a2a1e" onclick="kickMember('${pid}')">Remove from the alliance</button>`:''}
+    ${isLeader()?`<button class="btn grey" onclick="if(this.dataset.armed){makeLeader('${pid}')}else{this.dataset.armed=1;this.textContent='Click again: you lose leadership'}">Make leader</button>`:''}</div>`;
+  openDlg('Manage member',h)}
+function setRank(pid){const a=myAlly();if(!a||!canA('ranks'))return;a.ranks=a.ranks||{};const t=(document.getElementById('rkt').value||'').trim().slice(0,20),r={};
+  for(const [x] of AL_RIGHTS){const e=document.getElementById('rk_'+x);if(e&&e.checked)r[x]=1}
+  // nobody hands out rights they don't have
+  if(!isLeader())for(const x in r)if(!canA(x))delete r[x];
+  a.ranks[pid]={title:t,r};save();closeDlg();render();toast('Rank saved.')}
+function kickMember(pid){const a=myAlly();if(!a||!canA('kick')||pid===myPid()||pid===a.lead)return;const p=aiP(pid);if(!p||p.ally!==S.ally)return;
+  p.ally=null;a.members=Math.max(1,(a.members||1)-1);if(a.ranks)delete a.ranks[pid];if(p.allyMine===a.id)p.allyMine=null;
+  if(p.human){const nm=a.name;asHuman(p.uid,()=>addMsg(meName(),`You were removed from ${esc(nm)}.`))}else p.angry=(p.angry||0)+1;
+  save();closeDlg();render();toast(`${p.name} was removed from the alliance.`)}
+function makeLeader(pid){const a=myAlly();if(!a||!isLeader())return;const p=aiP(pid);if(!p||p.ally!==S.ally)return;
+  a.ranks=a.ranks||{};a.ranks[myPid()]={title:'Former leader',r:Object.fromEntries(AL_RIGHTS.map(x=>[x[0],1]))};delete a.ranks[pid];
+  a.lead=pid;S.allyMine=null;if(p.human){p.allyMine=a.id;a.mine=1;const nm=a.name;asHuman(p.uid,()=>addMsg(meName(),`You are now the leader of ${esc(nm)}.`))}else a.mine=0;
+  save();closeDlg();render();toast(`${p.name} now leads the alliance.`)}
+function leaveAlly(){const a=myAlly();if(!a)return;if(isLeader()&&allyMembers().length>1)return toast('Hand the alliance to another member first, or disband it.');
+  if(isLeader()){disbandAlly();return}
+  a.members=Math.max(0,(a.members||1)-1);if(a.ranks)delete a.ranks[myPid()];S.ally=null;S.invites=[];save();render();toast('You left '+a.name+'.')}
+function inviteByName(){const e=document.getElementById('alinv'),n=(e&&e.value||'').trim().toLowerCase();if(!n)return toast('Type a player name.');
+  const p=S.ai.players.find(x=>!x.nat&&x.joined&&x.vids.length&&x.name.toLowerCase()===n&&x.id!==myPid());if(!p)return toast('No player by that name.');
+  inviteToAlly(p.id)}
+function cancelInvite(pid){S.invites=(S.invites||[]).filter(i=>i.pid!==pid);save();render()}
+function saveAllyDesc(){const a=myAlly();if(!a||!canA('desc'))return;a.desc=(document.getElementById('aldesc').value||'').slice(0,400);save();render();toast('Description saved.')}
+function allyMail(){const a=myAlly();if(!a||!canA('mail'))return;const t=(document.getElementById('almail').value||'').trim().slice(0,600);if(!t)return toast('Write something first.');
+  let n=0;const from=meName();for(const p of S.ai.players)if(p.human&&p.ally===S.ally&&p.uid!==S.me){asHuman(p.uid,()=>addMsg(from,`To all of ${esc(a.name)}: ${esc(t)}`));n++}
+  save();render();toast(n?`Sent to ${n} friend${n>1?'s':''} in the alliance.`:'Sent. (Computer players read it but never reply.)')}
 
 /* ---------- panels ---------- */
 function renderTop(){
@@ -3696,7 +3773,7 @@ function openPage(k,sel){view=k;S.pageSel=sel;render()}
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- dialogs ---------- */
-function openDlg(title,html){document.getElementById('dlgc').innerHTML=`<div class="hd">${title}</div><div class="bd">${html}</div>`;document.getElementById('modal').classList.add('open');placeDlg()}
+function openDlg(title,html){{const d=document.getElementById('dlg');if(d)d.classList.toggle('wide',!!openDlg.wide);openDlg.wide=false}document.getElementById('dlgc').innerHTML=`<div class="hd">${title}</div><div class="bd">${html}</div>`;document.getElementById('modal').classList.add('open');placeDlg()}
 let dlgOff={x:0,y:0};
 function placeDlg(){const d=document.getElementById('dlg'),r=d.getBoundingClientRect(),bx=r.left-dlgOff.x,by=r.top-dlgOff.y;
   dlgOff.x=Math.max(-bx,Math.min(innerWidth-r.width-bx,dlgOff.x));dlgOff.y=Math.max(-by,Math.min(innerHeight-40-by,dlgOff.y));
@@ -3829,13 +3906,13 @@ function applySettings(){advance(Date.now());const sp=document.getElementById('s
 function resetGame(){openDlg('Start a new game?',`<p>This deletes your village and all progress.</p><button class="btn" style="background:#b23b2b;border-color:#8a2a1e" onclick="doReset()">Delete and start over</button> <button class="btn grey" onclick="closeDlg()">Cancel</button>`)}
 function doReset(){if(CO.on){location.href=location.pathname;return}try{localStorage.removeItem(SAVE_KEY)}catch(e){}_dirty=false;idbPut(SAVE_KEY,null).catch(()=>{});S=null;closeDlg();showStart()}
 function showStart(){
-  openDlg('A new village',`<p>Choose your people and name your first village.</p>
-   <div class="tribes">${Object.entries(TRIBES).filter(([k])=>k!=='X').map(([k,t],i)=>`<label><input type="radio" name="tr" value="${k}" ${i===0?'checked':''}><div><b>${t.n}</b><div class="note">${t.info}</div></div></label>`).join('')}</div>
-   <label class="f">Village name</label><input type="text" id="vn" value="New village" maxlength="30">
-   <label class="f">Start in</label><select id="quad"><option value="">A random quadrant</option><option value="++">North-east (+|+)</option><option value="+-">South-east (+|−)</option><option value="--">South-west (−|−)</option><option value="-+">North-west (−|+)</option></select>
-   <label class="f">Game speed</label><select id="sp"><option value="1">×1 (classic)</option><option value="3">×3</option><option value="10">×10</option><option value="100">×100 (testing)</option></select>
-   <label class="f">Computer opponents</label><div style="display:flex;gap:8px"><select id="oppn">${[0,150,1000,3000,10000].map(n=>`<option value="${n}" ${n===10000?'selected':''}>${fmt(n)}</option>`).join('')}</select>
-   <select id="oppm"><option value="peaceful">Peaceful</option><option value="normal" selected>Normal</option><option value="harsh">Harsh</option></select></div>
+  openDlg.wide=true;openDlg('A new village',`<p>Choose your people and name your first village.</p>
+   ${tribeCards('tr')}
+   <div class="sgrid"><div><label class="f">Village name</label><input type="text" id="vn" value="New village" maxlength="30"></div>
+   <div><label class="f">Start in</label><select id="quad"><option value="">A random quadrant</option><option value="++">North-east (+|+)</option><option value="+-">South-east (+|−)</option><option value="--">South-west (−|−)</option><option value="-+">North-west (−|+)</option></select></div>
+   <div><label class="f">Game speed</label><select id="sp"><option value="1">×1 (classic)</option><option value="3">×3</option><option value="10">×10</option><option value="100">×100 (testing)</option></select></div>
+   <div><label class="f">Computer opponents</label><div style="display:flex;gap:8px"><select id="oppn">${[0,150,1000,3000,10000].map(n=>`<option value="${n}" ${n===10000?'selected':''}>${fmt(n)}</option>`).join('')}</select>
+   <select id="oppm"><option value="peaceful">Peaceful</option><option value="normal" selected>Normal</option><option value="harsh">Harsh</option></select></div></div></div>
    <div class="note">At least half join right away and the rest over 3–5 days; half as many again arrive between days 5 and 21. About a third give up 5–21 days after they start. You start with beginner's protection.</div>
    ${FB_CONFIG?`<label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="coop" onchange="document.getElementById('copw').style.display=this.checked?'':'none'"> Play this world co-op with friends (online)</label>
    <div id="copw" style="display:none"><label class="f">World password (your friends will need it to join)</label><input type="text" id="copwi" maxlength="40" autocomplete="off"></div>`:''}
