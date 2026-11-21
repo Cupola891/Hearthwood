@@ -373,7 +373,7 @@ function load(){
     // units already owned count as researched (older saves skipped research for some)
     S.villages.forEach(v=>{for(const u in v.troops)if(v.troops[u]>0&&!v.research.includes(+u))v.research.push(+u)});
     if(!S.ai)aiSetup(150,'normal');
-    if(!S.prodEnd)S.prodEnd=S.protEnd||S.created+72*3600000/S.speed;else{aiIndex();if(!S.ai.ver){const n=Date.now();S.ai.players.forEach(p=>{if(!p.joined&&Math.random()<.7)p.join=n-1});S.ai.ver=2}}
+    if(!S.prodEnd)S.prodEnd=S.protEnd||S.created+72*3600000;else{aiIndex();if(!S.ai.ver){const n=Date.now();S.ai.players.forEach(p=>{if(!p.joined&&Math.random()<.7)p.join=n-1});S.ai.ver=2}}
     if(S.ai.ver<3)aiMigrate();}
 }
 // older saves kept opponents as a handful of numbers: turn each into a real village of about the same size
@@ -390,7 +390,7 @@ function aiMigrate(){
     for(const u in v.troops)if(!v.research.includes(+u))v.research.push(+u);
     S.ai.vil[id]=v;aiDerive(v)}
   for(const p of S.ai.players){if(!p.vids.length)continue;const b=S.ai.vil[p.vids[0]];
-    if(p.protEnd===undefined){p.protEnd=(b.born||now)+72*3600000/S.speed;p.prodEnd=p.protEnd;p.cp=0;p.cpLast=now;p.tokens=0;p.q={i:99}}}
+    if(p.protEnd===undefined){p.protEnd=(b.born||now)+72*3600000;p.prodEnd=p.protEnd;p.cp=0;p.cpLast=now;p.tokens=0;p.q={i:99}}}
   S.ai.ver=3;
 }
 
@@ -2178,7 +2178,7 @@ function moveHuman(m,anyH){if(anyH===undefined?!S.me&&!S.ai.players.some(p=>p.hu
 function newHuman(uid,name,tribe,quad,t){
   const p={id:'h_'+uid,uid,name,tribe,human:true,active:true,joined:true,pers:'veteran',skill:1,vids:[],join:t,quit:Infinity,first:t,
     ally:null,hero:null,quest:{i:0},mapC:null,mapZ:2,myOffers:[],reports:[],msgs:[],invites:[],player:name,allyMine:null,tokens:0,
-    protEnd:t+72*3600000/S.speed,prodEnd:t+72*3600000/S.speed,mead:null,cur:0,cp:0,cpLast:t,nextInvite:null,pageSel:null,npcEnd:null};
+    protEnd:t+72*3600000,prodEnd:t+72*3600000,mead:null,cur:0,cp:0,cpLast:t,nextInvite:null,pageSel:null,npcEnd:null};
   S.ai.players.push(p);_pcacheFor=null;
   const sp=spawnSpot(quad||''),v=makeVillage('New village',sp.x,sp.y,layoutFor(3),true,t);v.pid=p.id;v.tribe=tribe;
   S.ai.vil[v.id]=v;S.ai.at[sp.x+','+sp.y]=v.id;p.vids.push(v.id);p.mapC={x:sp.x,y:sp.y};aiDerive(v);return p}
@@ -2238,7 +2238,7 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   if(!dragActive())render()}
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- the world around each friend: only what changed; near things every minute, the wider area every 10 minutes, the rest hourly ---------- */
-const GAME_VER='2026-11-21c';
+const GAME_VER='2026-11-21d';
 const DG_NEAR=20,DG_MID=100,DG_LOOK=25;
 function dgVSig(v){return [v.pid,v.name,v.capital?1:0,v.ww?wwLvl(v):0,Math.floor(v.loy??100),v.wall||0,v.rl||0].join('|')}
 function dgPSig(p){return [p.name,p.ally||'',p.active?1:0,p.vids.join(',')].join('|')}
@@ -2477,7 +2477,7 @@ function aiSetup(count,mix){
   S.ai.players.sort((a,b)=>a.join-b.join);
   // early arrivals settle near the middle, later ones further out, as on a real server
   S.ai.players.forEach((p,i)=>{const rad=NAT_R+3+Math.sqrt(i+1)*1.6*(0.8+R()*0.4),a=R()*Math.PI*2;p.home={x:wrapC(Math.round(Math.cos(a)*rad)),y:wrapC(Math.round(Math.sin(a)*rad))}});
-  S.protEnd=now+72*3600000/S.speed;S.prodEnd=S.prodEnd||S.protEnd;
+  S.protEnd=now+72*3600000;S.prodEnd=S.prodEnd||S.protEnd;
   aiIndex();_pcacheFor=null;S.nat=null;S.arts=[];natSetup();
   aiJoins(now);
 }
@@ -2499,7 +2499,7 @@ function aiFound(p,x,y,type,t){
   const v=makeVillage(first?`${p.name}'s village`:`${p.name} ${p.vids.length+1}`,x,y,layoutFor(type),first,t);
   v.id=id;v.pid=p.id;v.tribe=p.tribe;v.type=type;v.loy=100;v.born=t;
   S.ai.vil[id]=v;S.ai.at[x+','+y]=id;p.vids.push(id);
-  if(first){p.protEnd=t+72*3600000/S.speed;p.prodEnd=p.protEnd;p.cp=0;p.cpLast=t;p.tokens=0;p.q={i:0};p.nb=0}
+  if(first){p.protEnd=t+72*3600000;p.prodEnd=p.protEnd;p.cp=0;p.cpLast=t;p.tokens=0;p.q={i:0};p.nb=0}
   aiDerive(v);
   return v;
 }
@@ -4025,7 +4025,7 @@ function rebuildAI(){if(CO.on){if(S.me!==CO.owner)return;if(CO.role!=='host'&&!C
   if(CO.on){// keep every human and their villages; only the computer players are replaced
     const me=S.me;stash();const hum=S.ai.players.filter(p=>p.human),vs=hum.flatMap(p=>p.vids.map(id=>S.ai.vil[id]).filter(Boolean));
     aiSetup(+document.getElementById('oppn').value,document.getElementById('oppm').value);
-    const t=Date.now();for(const p of hum){p.protEnd=p.prodEnd=t+72*3600000/S.speed;S.ai.players.push(p)}for(const v of vs){S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id}
+    const t=Date.now();for(const p of hum){p.protEnd=p.prodEnd=t+72*3600000;S.ai.players.push(p)}for(const v of vs){S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id}
     aiIndex();_pcacheFor=null;unstash(me);worldChanged();save();closeDlg();return}
   aiSetup(+document.getElementById('oppn').value,document.getElementById('oppm').value);save();closeDlg();render();toast('Opponents rebuilt.')}
 function applySettings(){advance(Date.now());const sp=document.getElementById('spd');if(sp&&(!CO.on||S.me===CO.owner)){S.speed=+sp.value;if(CO.on&&CO.role==='host')worldChanged()}const pn=document.getElementById('pn').value.trim();if(pn)S.player=pn.slice(0,24);save();closeDlg();render()}
