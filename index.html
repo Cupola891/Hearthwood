@@ -96,7 +96,7 @@ h3{margin:0 0 6px;font-size:14px}
 #dlg{background:var(--paper);border:2px solid #8a6a3c;border-radius:8px;width:min(620px,100%);box-shadow:0 10px 30px rgba(0,0,0,.35);position:relative}
 #dlg .hd{cursor:move;user-select:none;background:var(--paper-2);border-bottom:1px solid var(--line);padding:10px 40px 10px 14px;font-size:17px;font-weight:bold;border-radius:8px 8px 0 0}
 #dlg .bd{padding:12px 14px}
-#dlg .close{position:absolute;right:8px;top:6px;border:0;background:none;font-size:22px;color:var(--ink-soft)}
+#dlg .close{position:absolute;right:8px;top:6px;border:0;background:none;font-size:22px;color:var(--ink-soft);z-index:3;cursor:pointer}
 .cost{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:6px 0}
 .cost span{display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
 .cost span.short{color:var(--bad)}
@@ -131,6 +131,7 @@ table.rep td{padding:5px 6px}
 .navbtn.betabtn{width:52px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;margin-left:8px}.navbtn.betabtn b{font-size:12px;letter-spacing:.5px;color:#7a2f1e}.navbtn.betabtn .bv{font-size:10px;color:#5a4a30}.navbtn.betabtn.qhl::after{border-radius:24px}
 .navbtn.small{width:40px;height:40px;align-self:center;border-width:3px}.navbtn.small svg{width:30px;height:30px}.navbtn.sep{margin-left:22px}
 .navbtn.qhl::after{content:'';position:absolute;inset:-7px;border:3px solid #d0352b;border-radius:50%;animation:qring 1.2s ease-in-out infinite;pointer-events:none}
+@keyframes npcpulse{50%{opacity:.3}}.npcring{animation:npcpulse 1.2s ease-in-out infinite}
 @keyframes qring{50%{transform:scale(1.1);opacity:.6}}
 table.lv{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}
 table.lv th,table.lv td{border-bottom:1px solid #e6d9bb;padding:2px 4px;text-align:right}
@@ -180,6 +181,28 @@ select,input[type=text],option{font:inherit;padding:4px 6px;border:1px solid var
 #left svg,#rightcol svg{max-height:15px}
 @media (max-width:1100px) and (min-width:700px){#main{grid-template-columns:minmax(0,1fr) 190px}}
 @media (max-width:699px){#main{grid-template-columns:minmax(0,1fr)}#stage{height:62vh}}
+/* ---------- phones: everything fits the screen width, dialogs fit the screen height, bigger taps ---------- */
+@media (max-width:699px){
+  html,body{overflow-x:hidden;max-width:100vw}
+  #top{padding:4px 4px 0}
+  #nav{gap:4px;max-width:100%;justify-content:center}
+  .navbtn{width:38px;height:38px;border-width:2px}.navbtn svg{width:26px;height:26px}
+  .navbtn.small{width:32px;height:32px;border-width:2px}.navbtn.small svg{width:22px;height:22px}.navbtn.sep{margin-left:8px}
+  .navbtn.betabtn{width:40px;margin-left:2px}.navbtn.betabtn b{font-size:9.5px;letter-spacing:0}.navbtn.betabtn .bv{font-size:8.5px}
+  .navbtn .tip{display:none}
+  #stage{overflow:hidden}
+  #page{overflow-x:auto;height:auto;max-height:none}
+  #page .tabs{flex-wrap:wrap}#page .tabs input{flex:1 1 140px;min-width:0}
+  #modal{padding:46px 6px 10px;align-items:flex-start}
+  #dlg,#dlg.wide{width:100%;max-height:calc(100dvh - 56px);display:flex;flex-direction:column}
+  #dlgc{display:flex;flex-direction:column;min-height:0;flex:1}
+  #dlg .bd{overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
+  #dlg .hd{cursor:default;font-size:16px;padding-right:48px}
+  #dlg .close{font-size:30px;line-height:1;top:2px;right:4px;padding:6px 10px}
+  .btn{min-height:38px}
+  .tribes{grid-template-columns:1fr}
+  .sgrid{grid-template-columns:1fr 1fr}
+}
 /* testing controls: invisible and unclickable unless dev mode is on */
 body:not(.devon) .dev,body:not(.devon) [data-dev]{display:none!important;pointer-events:none!important}
 </style>
@@ -375,7 +398,7 @@ function load(){
     // units already owned count as researched (older saves skipped research for some)
     S.villages.forEach(v=>{for(const u in v.troops)if(v.troops[u]>0&&!v.research.includes(+u))v.research.push(+u)});
     if(!S.ai)aiSetup(150,'normal');
-    fixQuit(S);aiRequitOnce();
+    fixQuit(S);aiRequitOnce();questMigrate();
     if(!S.prodEnd)S.prodEnd=S.protEnd||S.created+72*3600000;else{aiIndex();if(!S.ai.ver){const n=Date.now();S.ai.players.forEach(p=>{if(!p.joined&&Math.random()<.7)p.join=n-1});S.ai.ver=2}}
     if(S.ai.ver<3)aiMigrate();}
 }
@@ -2258,6 +2281,8 @@ function aiRequitOnce(){if(!S||!S.ai||S.ai.qv>=2)return;const A=S.ai,now=Date.no
   let k=1;for(let it=0;it<40;it++){const sh=keys.reduce((a,x)=>a+(n[x]||0)/N*Math.min(1,k*QUIT_W[x]),0);k*=target/Math.max(.01,sh)}
   for(const p of P)if(R()<Math.min(1,k*QUIT_W[p.pers])){const st=p.joined?(p.first||p.join):p.join;let q=st+(5+16*Math.sqrt(R()))*D;if(q<now)q=now+R()*D;p.quit=q}
   A.qv=2}
+function questMigrate(){if(!S||!S.ai||(S.ai.qlv||0)>=2)return;const at=QUESTS.findIndex(q=>q.t==='Travelling merchant');
+  const bump=q=>{if(q&&typeof q.i==='number'&&q.i>=at&&q.i<99)q.i++};bump(S.quest);for(const p of S.ai.players){if(p.human)bump(p.quest);else bump(p.q)}S.ai.qlv=2}
 // a saved world stores "never quits" as null; read it back as never, and bring back anyone that mistake retired
 function fixQuit(W){if(!W||!W.ai)return;for(const p of W.ai.players)if(p.quit===null||p.quit===undefined){p.quit=Infinity;if(p.joined&&!p.nat&&!p.active)p.active=true}}
 /* ---------- each human's own part, published every few seconds by the host ---------- */
@@ -2390,7 +2415,7 @@ async function becomeHost(have){
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
     applyRelinks((await CO.db.ref(`worlds/${CO.wid}/relink`).get()).val());aiIndex();_pcacheFor=null;unstash(CO.uid)}
-  fixFriendNames();aiRequitOnce();
+  fixFriendNames();aiRequitOnce();questMigrate();
   if(!S.villages||!S.villages.length){showNet('Could not find your villages in this world. Reload the page to try again.');CO.role=null;return}
   await catchUp();advance(Date.now());render();showNet('');
   CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.sid===CO.sid)return;
@@ -2418,8 +2443,10 @@ async function coopBeat(){if(!CO.on)return;const now=Date.now();
   coopBadge()}
 function showNet(t){let d=document.getElementById('netov');if(!t){if(d)d.remove();return}if(!d){d=document.createElement('div');d.id='netov';d.style.cssText='position:fixed;inset:0;background:rgba(40,30,15,.55);display:flex;align-items:center;justify-content:center;z-index:999';document.body.appendChild(d)}
   d.innerHTML=`<div class="board" style="width:360px;text-align:center"><p style="margin:0">${t}</p></div>`}
-function coopBadge(){let b=document.getElementById('cobadge');if(!CO.on){if(b)b.remove();return}if(!b){b=document.createElement('div');b.id='cobadge';b.style.cssText='position:fixed;right:10px;bottom:10px;background:#fff8e6;border:2px solid #b08a4a;border-radius:8px;padding:4px 10px;font-size:12px;z-index:40';document.body.appendChild(b)}
-  b.innerHTML=CO.role==='host'?`Co-op · <b>you are hosting</b> · signed in as ${esc(CO.uid)} · <a href="#" onclick="coopInvite();return false">invite</a> · <a href="#" onclick="coopSignOut();return false">sign out</a>`:`Co-op · hosted by <b>${esc(CO.hostName||'?')}</b> · signed in as ${esc(CO.uid)} · <a href="#" onclick="coopInvite();return false">invite</a> · <a href="#" onclick="coopSignOut();return false">sign out</a>`}
+// a small "Hosting" tag while this browser runs the world; nothing otherwise
+function coopBadge(){let b=document.getElementById('cobadge');if(!CO.on||CO.role!=='host'){if(b)b.remove();return}
+  if(!b){b=document.createElement('div');b.id='cobadge';b.style.cssText='position:fixed;right:10px;bottom:10px;background:#fff8e6;border:2px solid #b08a4a;border-radius:8px;padding:3px 10px;font-size:12px;z-index:40';document.body.appendChild(b)}
+  b.innerHTML='<b>Hosting</b>'}
 function coopInvite(){const url=location.origin+location.pathname+'?w='+CO.pub;openDlg('Invite friends',`<p>Send your friends this link. They choose a tribe and a quadrant, and start with the same beginner protection and tasks you had.</p><input type="text" readonly value="${url}" style="width:100%" onclick="this.select()"><p class="muted">They also need the world password. Send it separately (a different app, or tell them), not in the same message as the link.</p>`)}
 /* ---------- starting up ---------- */
 async function fbInit(){if(CO.db)return true;if(!FB_CONFIG)return false;
@@ -2529,7 +2556,7 @@ function aiSetup(count,mix){
   const n={};for(const p of S.ai.players)n[p.pers]=(n[p.pers]||0)+1;const N=S.ai.players.length;
   k=1;for(let it=0;it<40;it++){const sh=keys.reduce((a,x)=>a+(n[x]||0)/N*Math.min(1,k*QUIT_W[x]),0);k*=target/Math.max(.01,sh)}
   for(const p of S.ai.players)if(R()<Math.min(1,k*QUIT_W[p.pers]))p.quit=Math.max(p.join,now)+(5+16*Math.sqrt(R()))*D;
-  S.ai.qv=2;
+  S.ai.qv=2;S.ai.qlv=2;
   S.ai.players.sort((a,b)=>a.join-b.join);
   // early arrivals settle near the middle, later ones further out, as on a real server
   S.ai.players.forEach((p,i)=>{const rad=NAT_R+3+Math.sqrt(i+1)*1.6*(0.8+R()*0.4),a=R()*Math.PI*2;p.home={x:wrapC(Math.round(Math.cos(a)*rad)),y:wrapC(Math.round(Math.sin(a)*rad))}});
@@ -2898,7 +2925,7 @@ function aiQuests(p,t){
     const q=aiQuestList(p)[p.q.i];if(!q)return;
     if(q.choose){p.q.br=PERS[p.pers].off>=.3?'M':'E';p.q.i++;continue}
     let done=false;QV=cap;
-    try{if(q.ask||q.start||q.t==='Your village’s name'||q.t==='Look around')done=true;
+    try{if(q.ask||q.start||q.t==='Your village’s name'||q.t==='Look around'||q.t==='Travelling merchant')done=true;
       else if(q.t==='Alliance')done=!!p.ally;
       else if(q.pay){if(cap.res[3]>=q.pay[3]){cap.res[3]-=q.pay[3];done=true}}
       else done=!!q.ok()}catch(e){done=false}
@@ -3592,6 +3619,8 @@ const QUESTS=[
  {t:'Messages',say:'I have sent you a message. Open your Messages and read it.',task:'Read the Taskmaster’s message.',start:'msg',ok:()=>{const m=(S.msgs||[]).find(m=>m.id===S.quest.msg);return !m||m.read},rw:null},
  {t:'Neighbours',say:'Every village around here belongs to someone. I want you to find one of them on the map.',task:()=>{const v=questNb();return v?`Find the village <b>${esc(v.name)}</b> on the map and enter its coordinates.`:'Find any neighbouring village on the map and enter its coordinates.'},start:'nb',ask:'xy',rw:[60,30,40,90]},
  {t:'Huge army',say:'I can raise you a mighty army, but soldiers must eat. Bring me 200 crop.',task:'Hand over 200 crop.',pay:[0,0,0,200],rw:'rat'},
+ {t:'Travelling merchant',say:'Your villagers work hard, but the land doesn’t always give in equal measure: you may find yourself with lumber to spare and not a scrap of clay, or more crop than you can eat and no iron. A travelling merchant has set up his cart in your village square, and he’ll swap your resources for others on the spot. Go and pay him a visit.',
+  task:()=>npcLeft()>0?'Make a trade with the travelling merchant in your village centre.':'The merchant has packed up and moved on. Remember him if he ever comes back.',ok:()=>!!(S.quest&&S.quest.npc)||npcLeft()<=0,rw:null},
  {t:'One each',say:'Keep your workers busy: one more of every field type.',task:'Have two of each field type (Woodcutter, Clay Pit, Iron Mine, Cropland) at level 1 or higher.',ok:()=>[0,1,2,3].every(t=>nAt(t,1)>=2),rw:[100,80,40,40]},
  {t:'Look around',say:'While you wait for resources, take a look at the world map and see who lives nearby.',task:'Open the map.',ok:()=>!!S.quest.map,rw:[100,100,100,100]},
  {t:'Reports',say:'I have sent you a report. Reports tell you about battles, trades and news. Go and read it.',task:'Read the new report.',start:'rep',ok:()=>{const r=(S.reports||[]).find(r=>r.id===S.quest.rep);return !r||r.read},rw:[75,140,40,230]},
@@ -3667,9 +3696,9 @@ function questBranch(b){S.quest.br=b;S.quest.i++;save();render();openQuest()}
 function updateQBtn(){const el=document.getElementById('qbtn');if(!el)return;const q=S&&curQuest(),show=!!q&&['res','vil'].includes(view);
   el.style.display=show?'flex':'none';if(show){el.classList.toggle('ready',questReady());el.classList.toggle('first',!S.qSeen)}}
 // what changed in the latest update (shown from the BETA button, which glows until opened)
-const CHANGELOG={'Features':['New BETA button next to Settings. It shows the game version, lights up red after each update, and opens this changelog.'],
+const CHANGELOG={'Features':['New Taskmaster task after "Huge army": visit the travelling merchant in your village centre, who swaps resources on the spot. He glows red until you trade with him.','New BETA button next to Settings. It shows the game version, lights up red after each update, and opens this changelog.'],
  'Balance':['Computer players no longer give up in their first few days, and very few quit before day 7.'],
- 'Quality of Life':['Phones: pinch to magnify the map, separately from the map\'s own zoom levels.','Phones: the map now uses the full width of the screen.','Search on the Statistics page, for players or alliances. Results keep their real rank, and clicking a player\'s name shows them on the map.','Search on the map: type a player, a village name, or coordinates like 12|-7.','The build queue is now centred under your village.','The co-op badge moved to the bottom-right corner so it no longer covers the build queue.'],
+ 'Quality of Life':['Phones: the whole game now fits the screen. No more sideways scrolling, smaller top buttons, dialogs that fit and scroll, and a bigger close button.','Phones: the new-village and join screens list the three tribes one under another.','Phones: pinch to magnify the map, separately from the map\'s own zoom levels.','Phones: the map now uses the full width of the screen.','Search on the Statistics page, for players or alliances. Results keep their real rank, and clicking a player\'s name shows them on the map.','Search on the map: type a player, a village name, or coordinates like 12|-7.','The build queue is now centred under your village.','The co-op box in the corner is gone. A small "Hosting" tag shows when your browser is running the world, and your invite link and Sign out are now in Settings.'],
  'Bug fixes':['Phones: tapping a map tile opened its details and closed them again straight away.','Computer players who should never quit were being marked as quit and stopped playing whenever the host\'s browser loaded the world from the online save. They\'re back, and it won\'t happen again.','A computer player who has stopped playing now only looks inactive (greyed out on the map, "looks inactive", grey status dot) after a week away.','Friends who joined without typing a name showed up as "Friend". They now show their username.','"Enter your current rank" tasks could reject the exact number shown on your Statistics page. The rank you see is now accepted.','The warning that a Taskmaster reward won\'t fit in your storage didn\'t appear on some tasks.']};
 function openChangelog(){if(S&&S.seenVer!==GAME_VER)markChangelogSeen();
   openDlg(`What's new in v${GAME_VER}`,Object.entries(CHANGELOG).map(([h,L])=>`<h3 style="margin:12px 0 4px">${h}</h3>${L.length?`<ul style="margin:0;padding-left:20px">${L.map(x=>`<li style="margin:3px 0">${esc(x)}</li>`).join('')}</ul>`:''}`).join(''));renderTop()}
@@ -3740,8 +3769,8 @@ function pageManual(){
 }
 
 // the travelling merchant's wagon in the village square
-function merchantArt(x,y){
-  return `<g class="npc" onclick="openNPC()" style="cursor:pointer" filter="url(#wob)">
+function merchantArt(x,y){const q=S&&curQuest(),hl=q&&q.t==='Travelling merchant'&&!S.quest.npc;
+  return `${hl?`<ellipse class="npcring" cx="${x}" cy="${y-14}" rx="66" ry="50" fill="none" stroke="#d0352b" stroke-width="5" pointer-events="none"/>`:''}<g class="npc" onclick="openNPC()" style="cursor:pointer" filter="url(#wob)">
    <ellipse cx="${x}" cy="${y+2}" rx="64" ry="13" fill="#000" opacity=".14"/>
    <g transform="translate(${x-8},${y})">
     <path d="M-46 -14 H34 L30 -30 H-42Z" fill="url(#plank)" stroke="${INK}" stroke-width="2"/>
@@ -3794,7 +3823,7 @@ function npcRest(){const tot=V.res.reduce((a,v)=>a+Math.floor(v),0),c=caps(),v=n
   v.forEach((x,i)=>document.getElementById('npc'+i).value=x);npcSum()}
 function npcTrade(){advance(Date.now());const tot=V.res.reduce((a,v)=>a+Math.floor(v),0),c=caps(),v=npcVals(),sum=v.reduce((a,b)=>a+b,0);
   if(sum>tot||v.some((x,i)=>x>c[i]))return toast('That trade doesn’t add up.');
-  for(let i=0;i<4;i++)V.res[i]=v[i]+(V.res[i]-Math.floor(V.res[i]))*0;save();closeDlg();render();toast('The merchant tips his hat. Pleasure doing business!')}
+  for(let i=0;i<4;i++)V.res[i]=v[i]+(V.res[i]-Math.floor(V.res[i]))*0;if(S.quest)S.quest.npc=1;save();closeDlg();render();toast('The merchant tips his hat. Pleasure doing business!')}
 
 /* ---------- alliance member list with online status (classic style) ---------- */
 const STATUS=[['#2e9e3e','Online now'],['#e3b51c','Online in the last 24 hours'],['#e07b1f','Online in the last 3 days'],['#c0392b','Online in the last 7 days'],['#8a8a8a','Not online for more than 7 days']];
@@ -3972,10 +4001,11 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 /* ---------- dialogs ---------- */
 function openDlg(title,html){{const d=document.getElementById('dlg');if(d)d.classList.toggle('wide',!!openDlg.wide);openDlg.wide=false}document.getElementById('dlgc').innerHTML=`<div class="hd">${title}</div><div class="bd">${html}</div>`;document.getElementById('modal').classList.add('open');placeDlg()}
 let dlgOff={x:0,y:0};
-function placeDlg(){const d=document.getElementById('dlg'),r=d.getBoundingClientRect(),bx=r.left-dlgOff.x,by=r.top-dlgOff.y;
+const isPhone=()=>matchMedia('(max-width:699px)').matches;
+function placeDlg(){if(isPhone()){dlgOff={x:0,y:0};document.getElementById('dlg').style.transform='';return}const d=document.getElementById('dlg'),r=d.getBoundingClientRect(),bx=r.left-dlgOff.x,by=r.top-dlgOff.y;
   dlgOff.x=Math.max(-bx,Math.min(innerWidth-r.width-bx,dlgOff.x));dlgOff.y=Math.max(-by,Math.min(innerHeight-40-by,dlgOff.y));
   d.style.transform=`translate(${dlgOff.x}px,${dlgOff.y}px)`}
-document.addEventListener('mousedown',e=>{const hd=e.target.closest&&e.target.closest('#dlg .hd');if(!hd||e.button)return;e.preventDefault();
+document.addEventListener('mousedown',e=>{const hd=e.target.closest&&e.target.closest('#dlg .hd');if(!hd||e.button||isPhone())return;e.preventDefault();
   const sx=e.clientX-dlgOff.x,sy=e.clientY-dlgOff.y;
   const mv=ev=>{dlgOff.x=ev.clientX-sx;dlgOff.y=ev.clientY-sy;placeDlg()},up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up)};
   addEventListener('mousemove',mv);addEventListener('mouseup',up)});
@@ -4070,10 +4100,11 @@ function doRename(){const n=document.getElementById('rn').value.trim();if(n){V.n
 function toast(msg){let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';document.body.appendChild(t)}
   t.textContent=msg;t.className='show';clearTimeout(toast.h);toast.h=setTimeout(()=>t.className='',3000)}
 const isOwner=()=>!CO.on||CO.uid===CO.owner;
+function coopSettings(){if(!CO.on)return '';return `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="muted">Signed in as <b>${esc(CO.uid||'')}</b></span><button class="btn grey" onclick="coopInvite()">Invite link</button><button class="btn grey" onclick="coopSignOut()">Sign out</button></div>`}
 function openSettings(){
   if(!isOwner())return openDlg('Settings · Hearthwood v'+GAME_VER,`<label class="f">Player name</label><input type="text" id="pn" value="${esc(S.player)}">
    <div class="note">Game speed and opponents are set by the world's creator, ${esc(CO.owner||'')}.</div>
-   <div style="margin-top:12px"><button class="btn" onclick="applySettings()">Save</button></div>`);
+   <div style="margin-top:12px"><button class="btn" onclick="applySettings()">Save</button></div>${coopSettings()}`);
   openDlg('Settings · Hearthwood v'+GAME_VER,`<label class="f">Game speed</label>
    <select id="spd">${[1,2,3,5,10,100].map(v=>`<option value="${v}" ${S.speed===v?'selected':''}>×${v}${v===1?' (classic)':v===100?' (testing)':''}</option>`).join('')}</select>
    <div class="note">Speed multiplies production and divides build times. Work already in progress keeps its finish time.</div>
@@ -4085,7 +4116,7 @@ function openSettings(){
    <div class="note">Aggression sets the personality mix — Peaceful has mostly builders and casual players; Harsh has many raiders and veterans. Rebuilding replaces every opponent (your villages stay) and gives you a fresh beginner's protection.</div>
    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" onclick="applySettings()">Save</button>
    ${CO.on?`<button class="btn grey" style="background:#b23b2b;border-color:#8a2a1e;color:#fff" onclick="askDeleteWorld()">Delete this world…</button>`:`<button class="btn grey" onclick="resetGame()">Start a new game…</button>`}</div>
-   ${CO.on?'<div class="note">Changes here apply to everyone in this world.</div>':''}`);
+   ${CO.on?'<div class="note">Changes here apply to everyone in this world.</div>':''}${coopSettings()}`);
 }
 function askDeleteWorld(){openDlg('Delete this world?',`<p>This deletes the whole world for everyone: every village, yours and your friends', and all the opponents. It can't be undone.</p><button class="btn" style="background:#b23b2b;border-color:#8a2a1e" onclick="deleteWorld()">Delete the world</button> <button class="btn grey" onclick="closeDlg()">Keep it</button>`)}
 async function deleteWorld(){if(!isOwner())return;CO.on=false;closeDlg();showNet('Deleting the world…');
