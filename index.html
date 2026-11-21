@@ -2204,8 +2204,9 @@ async function gz(str){const cs=new CompressionStream('gzip'),w=cs.writable.getW
 async function gunz(b64){const bin=atob(b64),buf=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)buf[i]=bin.charCodeAt(i);
   const ds=new DecompressionStream('gzip'),w=ds.writable.getWriter();w.write(buf);w.close();return await new Response(ds.readable).text()}
 function worldJSON(){const me=S.me,v0=V;stash();try{return JSON.stringify(S)}finally{if(me)unstash(me);if(S.villages.includes(v0))V=v0}}
-async function writeSnap(){if(!CO.on||CO.role!=='host')return;const b=await gz(worldJSON()),n=Math.ceil(b.length/2e6),upd={};
-  upd.c={};for(let i=0;i<n;i++)upd.c['p'+i]=b.slice(i*2e6,(i+1)*2e6);upd.meta={v:Date.now(),n,t:S.ai.last,by:CO.uid};
+async function writeSnap(){if(!CO.on||CO.role!=='host')return;const ver=Date.now(),js=worldJSON(),G=withStash(dgGlobal);CO.G=CO.G||{};CO.G[ver]=G;{const ks=Object.keys(CO.G).sort();while(ks.length>3)delete CO.G[ks.shift()]}
+  const b=await gz(js),n=Math.ceil(b.length/2e6),upd={};CO.snapBytes=b.length;
+  upd.c={};for(let i=0;i<n;i++)upd.c['p'+i]=b.slice(i*2e6,(i+1)*2e6);upd.meta={v:ver,n,t:S.ai.last,by:CO.uid};
   await CO.db.ref(`worlds/${CO.wid}/snap`).set(upd);CO.snapAt=Date.now()}
 async function readSnap(){const s=(await CO.db.ref(`worlds/${CO.wid}/snap`).get()).val();if(!s||!s.meta)return null;
   let b='';for(let i=0;i<s.meta.n;i++)b+=s.c['p'+i];return {S:JSON.parse(await gunz(b)),meta:s.meta}}
@@ -2229,6 +2230,76 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   CO.pending=CO.pending.filter(a=>a.k>hs.ack);for(const a of CO.pending)replay(a);
   if(!dragActive())render()}
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
+/* ---------- the world around each friend: only what changed; near things every minute, the wider area every 10 minutes, the rest hourly ---------- */
+const GAME_VER='2026-11-21';
+const DG_NEAR=20,DG_MID=100,DG_LOOK=25;
+function dgVSig(v){return [v.pid,v.name,v.capital?1:0,v.ww?wwLvl(v):0,Math.floor(v.loy??100),v.wall||0,v.rl||0].join('|')}
+function dgPSig(p){return [p.name,p.ally||'',p.active?1:0,p.vids.join(',')].join('|')}
+function withStash(fn){const me=S.me,v0=V;stash();_grid=null;try{return fn()}finally{_grid=null;if(me)unstash(me);if(S.villages.includes(v0))V=v0}}
+// what everyone has, as of a snapshot: the starting point for each friend's changes
+function dgGlobal(){const v=new Map(),p=new Map(),a=new Map(),o=new Map();
+  for(const id in S.ai.vil){const x=S.ai.vil[id];v.set(id,{s:dgVSig(x),p:aiPop(x)})}
+  for(const x of S.ai.players)p.set(x.id,dgPSig(x));for(const x of S.ai.alli)a.set(x.id,JSON.stringify(x));
+  for(const k in S.oases||{})o.set(k,S.oases[k].owner||'');
+  return {v,p,a,o,arts:JSON.stringify(S.arts||[]),nat:JSON.stringify(S.nat||null),over:JSON.stringify(S.over||null)}}
+function dgCopy(G,sv){return {sv,n:0,v:new Map(G.v),p:new Map(G.p),a:new Map(G.a),o:new Map(G.o),arts:G.arts,nat:G.nat,over:G.over,seen:new Map()}}
+// one friend's packet (runs with every human parked, so their villages are all in S.ai.vil)
+function dgBuild(uid,C,look){
+  const hp=humanP(uid);if(!hp)return null;const mine=hp.vids.map(id=>S.ai.vil[id]).filter(Boolean);if(!mine.length)return null;
+  const mineIds=new Set(hp.vids),mid=C.n%10===0,far=C.n%60===0;C.n++;
+  const near=new Set(),wide=new Set(),area=(c,r,into)=>{for(const n of aiNeighbours(c,r))if(n.kind==='a')into.add(n.v.id)};
+  for(const v of mine)area(v,DG_NEAR,near);
+  if(look&&mine.every(v=>dist(v,look)>DG_LOOK))area(look,DG_LOOK,near);
+  if(hp.ally)for(const x of S.ai.players)if(x.ally===hp.ally&&x!==hp)for(const id of x.vids)near.add(id);
+  const xy=new Set(mine.map(v=>v.x+','+v.y));
+  for(const m of S.moves){if(m.fromA&&(xy.has(m.x+','+m.y)||mineIds.has(m.to)))near.add(m.fromA);if(mineIds.has(m.from)||mineIds.has(m.fromA)){const t=aiAt(m.x,m.y);if(t)near.add(t.id)}}
+  for(const a of S.arts||[])near.add(a.vid);for(const v of _dgWW)near.add(v.id);
+  if(mid&&!far)for(const v of mine)area(v,DG_MID,wide);
+  const out={v:{},rm:[],p:{},a:[],o:{}};let any=false;
+  const check=(id,exact)=>{if(mineIds.has(id))return;const x=S.ai.vil[id];if(!x)return;const c=C.v.get(id),sg=dgVSig(x),pp=aiPop(x);
+    if(c&&c.s===sg&&(exact?c.p===pp:Math.abs(c.p-pp)<Math.max(5,c.p*.05)))return;
+    out.v[id]=!c||x.ww||(c.s.split('|')[0]!==sg.split('|')[0])?{f:1,d:x}:{pid:x.pid,name:x.name,capital:x.capital,loy:x.loy,wall:x.wall,rl:x.rl,L:x.L,popC:pp};
+    C.v.set(id,{s:sg,p:pp});any=true};
+  for(const id of near)check(id,true);
+  if(far){for(const id in S.ai.vil)if(!near.has(id))check(id,false)}else if(mid)for(const id of wide)if(!near.has(id))check(id,false);
+  for(const id of C.v.keys())if(!S.ai.vil[id]){out.rm.push(id);C.v.delete(id);any=true}
+  for(const x of S.ai.players){if(x===hp)continue;const sg=dgPSig(x),c=C.p.get(x.id);
+    const sb=x.ally&&x.ally===hp.ally?Math.floor((x.seen||0)/600000):null;
+    if(c===sg&&(sb===null||C.seen.get(x.id)===sb))continue;
+    out.p[x.id]=c===undefined?{f:1,d:x}:{name:x.name,ally:x.ally||null,active:x.active,vids:x.vids,seen:x.seen||0};C.p.set(x.id,sg);if(sb!==null)C.seen.set(x.id,sb);any=true}
+  for(const x of S.ai.alli){const j=JSON.stringify(x);if(C.a.get(x.id)!==j){out.a.push(x);C.a.set(x.id,j);any=true}}
+  const dmin=(k)=>{const [x,y]=k.split(',').map(Number);let d=1e9;for(const v of mine)d=Math.min(d,dist(v,{x,y}));return d};
+  for(const k in S.oases||{}){const o=S.oases[k],ow=o.owner||'';if(C.o.get(k)===ow)continue;const d=far?0:dmin(k);if(d<=DG_NEAR||(mid&&d<=DG_MID)||far){out.o[k]=o;C.o.set(k,ow);any=true}}
+  for(const k of ['arts','nat','over']){const j=JSON.stringify(k==='arts'?S.arts||[]:S[k]||null);if(C[k]!==j){out[k]=JSON.parse(j);C[k]=j;any=true}}
+  return any?out:null}
+let _dgWW=[];
+async function dgRound(){if(CO.role!=='host')return;const now=Date.now();CO.dgAt=now;
+  const on=(await CO.db.ref(`worlds/${CO.wid}/on`).get()).val()||{};CO.dc=CO.dc||{};const packs={};
+  for(const uid in CO.dc)if(!on[uid]||on[uid].t<now-90000)delete CO.dc[uid];
+  withStash(()=>{_grid=aiGrid();_dgWW=Object.values(S.ai.vil).filter(v=>v.ww);
+    for(const uid in on){const o=on[uid];if(uid===CO.uid||!o||o.t<now-90000||!humanP(uid))continue;
+      let C=CO.dc[uid];if(!C||C.sv!==o.sv){const G=CO.G&&CO.G[o.sv];if(!G){packs[uid]={resync:1};delete CO.dc[uid];continue}C=CO.dc[uid]=dgCopy(G,o.sv)}
+      const pk=dgBuild(uid,C,o.mx!==undefined?{x:o.mx,y:o.my}:null);if(pk)packs[uid]=pk}});
+  for(const uid in packs){const z=await gz(JSON.stringify(packs[uid]));CO.dgBytes=(CO.dgBytes||0)+z.length;CO.db.ref(`worlds/${CO.wid}/dg/${uid}`).push(z)}}
+// a friend's side: apply each packet in order
+async function dgApply(z){const pk=JSON.parse(await gunz(z));if(pk.resync){await clientReload();return}
+  for(const id in pk.v){const e=pk.v[id];if(e.f){const o=S.ai.vil[id];if(o&&S.ai.at[o.x+','+o.y]===id)delete S.ai.at[o.x+','+o.y];S.ai.vil[id]=e.d;S.ai.at[e.d.x+','+e.d.y]=id}else{const v=S.ai.vil[id];if(v)Object.assign(v,e)}}
+  for(const id of pk.rm){const v=S.ai.vil[id];if(v){if(S.ai.at[v.x+','+v.y]===id)delete S.ai.at[v.x+','+v.y];delete S.ai.vil[id]}}
+  let np=false;for(const id in pk.p){const e=pk.p[id];let x=aiP(id);if(e.f){if(x&&x.uid===S.me)continue;if(x)Object.assign(x,e.d);else{S.ai.players.push(e.d);np=true}}else if(x&&x.uid!==S.me)Object.assign(x,e)}
+  for(const a of pk.a){const i=S.ai.alli.findIndex(x=>x.id===a.id);if(i>=0)S.ai.alli[i]=a;else S.ai.alli.push(a)}
+  for(const k in pk.o)S.oases[k]=pk.o[k];
+  if(pk.arts)S.arts=pk.arts;if('nat' in pk)S.nat=pk.nat;if('over' in pk)S.over=pk.over;
+  if(np)_pcacheFor=null;_grid=null;_oasC=null;if(!dragActive())render()}
+async function clientReload(){const sn=await readSnap();if(!sn)return;CO.sv=sn.meta.v;CO.rev=CO.rev;const hs=CO.lastHS;S=sn.S;aiIndex();_pcacheFor=null;unstash(CO.uid);if(hs)mergeHS(hs);render()}
+function dgListen(){CO.db.ref(`worlds/${CO.wid}/dg/${CO.uid}`).on('child_added',async d=>{const z=d.val();d.ref.remove();if(CO.role!=='client'||!z)return;
+  CO._dgq=(CO._dgq||Promise.resolve()).then(()=>dgApply(z)).catch(e=>console.warn('dg',e))})}
+function dgPresence(){const m=S&&S.mapC;CO.db.ref(`worlds/${CO.wid}/on/${CO.uid}`).set({t:Date.now(),sv:CO.sv||0,ver:GAME_VER,...(m?{mx:m.x,my:m.y}:{})})}
+// everyone should run the same version of the game
+function verCheck(meta){const mv=meta.ver||'';
+  if(CO.role==='host'){if(mv<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(GAME_VER);
+    if(meta.newer&&meta.newer>GAME_VER&&!CO.warnedVer){CO.warnedVer=1;openDlg('A newer version is out',`<p>A friend is on a newer version of Hearthwood. Save happens automatically: just refresh this page to update, and the world carries on.</p><button class="btn" onclick="location.reload()">Refresh now</button>`)}return true}
+  if(mv>GAME_VER){CO.on=false;showNet(`This page is an older version of Hearthwood. <a href="#" onclick="location.reload();return false">Refresh</a> to keep playing.`);return false}
+  if(mv<GAME_VER&&(meta.newer||'')<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/newer`).set(GAME_VER);return true}
 /* ---------- hosting ---------- */
 async function takeLease(){const r=CO.db.ref(`worlds/${CO.wid}/lease`);let won=false;
   await r.transaction(l=>{if(l&&l.until>Date.now()&&l.sid!==CO.sid)return;won=true;return {uid:CO.uid,sid:CO.sid,name:S&&S.player||'',until:Date.now()+180000}});
@@ -2258,15 +2329,15 @@ let _coT=0;
 async function coopBeat(){if(!CO.on)return;const now=Date.now();
   const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();
   if(!meta){CO.on=false;try{CO.db.ref(`worlds/${CO.wid}/lease`).onDisconnect().cancel()}catch(e){}showNet(`This world was deleted by its creator. <a href="${location.pathname}">Back to the start</a>`);return}
-  if(CO.role==='client'&&meta.rev&&meta.rev!==CO.rev){if(CO.rev){CO.snapAt=0}CO.rev=meta.rev}
+  if(!verCheck(meta))return;
+  if(CO.role==='client'&&meta.rev&&meta.rev!==CO.rev){const had=CO.rev;CO.rev=meta.rev;if(had)await clientReload()}
   if(CO.role==='host'){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
     if(l&&l.sid!==CO.sid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
     await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,sid:CO.sid,name:S.player,until:now+180000});
-    humanTick(now);publishHS();if(now-CO.snapAt>10*60000)writeSnap()}
+    humanTick(now);publishHS();if(now-CO.snapAt>10*60000)await writeSnap();if(now-(CO.dgAt||0)>=60000)dgRound()}
   else{const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();CO.hostName=l&&l.name||'';
     if(!l||l.until<now){if(await takeLease())await becomeHost()}
-    // refresh the wider world now and then
-    else if(now-CO.snapAt>10*60000){const sn=await readSnap();CO.rev=meta.rev;if(sn){CO.snapAt=now;const hs=CO.lastHS;S=sn.S;aiIndex();_pcacheFor=null;unstash(CO.uid);if(hs)mergeHS(hs);render()}}}
+    else dgPresence()}
   coopBadge()}
 function showNet(t){let d=document.getElementById('netov');if(!t){if(d)d.remove();return}if(!d){d=document.createElement('div');d.id='netov';d.style.cssText='position:fixed;inset:0;background:rgba(40,30,15,.55);display:flex;align-items:center;justify-content:center;z-index:999';document.body.appendChild(d)}
   d.innerHTML=`<div class="board" style="width:360px;text-align:center"><p style="margin:0">${t}</p></div>`}
@@ -2348,7 +2419,8 @@ async function coopEnter(){showNet('Loading the world…');
   const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
   if(!l||l.until<Date.now()){if(await takeLease()){await becomeHost();finishEnter();return}}
   let sn=null;for(let i=0;i<30;i++){sn=await readSnap();if(sn&&sn.S.ai.players.some(p=>p.uid===CO.uid))break;await new Promise(r=>setTimeout(r,1000))}
-  S=sn.S;aiIndex();_pcacheFor=null;unstash(CO.uid);CO.role='client';CO.snapAt=Date.now();
+  S=sn.S;CO.sv=sn.meta.v;aiIndex();_pcacheFor=null;unstash(CO.uid);CO.role='client';CO.snapAt=Date.now();
+  await CO.db.ref(`worlds/${CO.wid}/dg/${CO.uid}`).remove();dgListen();dgPresence();
   const hs=(await CO.db.ref(`worlds/${CO.wid}/hs/${CO.uid}`).get()).val();if(hs)mergeHS(JSON.parse(hs));
   CO.db.ref(`worlds/${CO.wid}/hs/${CO.uid}`).on('value',d=>{if(CO.role==='client'&&d.val())mergeHS(JSON.parse(d.val()))});
   finishEnter()}
