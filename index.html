@@ -2213,14 +2213,20 @@ async function readSnap(){const s=(await CO.db.ref(`worlds/${CO.wid}/snap`).get(
 /* ---------- each human's own part, published every few seconds by the host ---------- */
 function involves(m,ids,xy){return ids.has(m.from)||ids.has(m.to)||ids.has(m.mv)||xy.has(m.x+','+m.y)}
 function humanState(uid){return asHuman(uid,()=>{const ids=new Set(S.villages.map(v=>v.id)),xy=new Set(S.villages.map(v=>v.x+','+v.y)),p={};
-  for(const k of HK)p[k]=S[k];p.reports=(S.reports||[]).slice(0,150);
+  for(const k of HK)p[k]=S[k];p.reports=(S.reports||[]).slice(0,40);p.msgs=(S.msgs||[]).slice(0,40);p.sent=(S.sent||[]).slice(0,20);
   return {p,villages:S.villages,moves:S.moves.filter(m=>involves(m,ids,xy)),oases:Object.fromEntries(Object.entries(S.oases||{}).filter(([k,o])=>ids.has(o.owner))),ack:CO.ackOf[uid]||0,t:Date.now(),al:S.ally?{a:S.ai.alli.find(x=>x.id===S.ally)||null,mem:S.ai.players.filter(x=>x.ally===S.ally).map(x=>x.id)}:null}})}
 function humanTick(now){for(const p of S.ai.players){if(!p.human||p.uid===S.me)continue;
   asHuman(p.uid,()=>{S.villages.forEach(v=>withV(v,()=>advanceV(now)));accrueCP(now);heroTick(now);regenMyLoyalty(now);aiSocial(now);aiInviteReplies(now)})}}
-async function publishHS(){if(CO.role!=='host')return;const upd={};for(const p of S.ai.players.filter(p=>p.human).concat(S.me?[humanP(S.me)]:[])){if(!p)continue;upd[p.uid]=JSON.stringify(humanState(p.uid))}
-  await CO.db.ref(`worlds/${CO.wid}/hs`).update(upd)}
+// packed, and only sent when something in it changed
+async function publishHS(){if(CO.role!=='host')return;const upd={};CO.hsLast=CO.hsLast||{};
+  for(const p of S.ai.players.filter(p=>p.human).concat(S.me?[humanP(S.me)]:[])){if(!p)continue;const st=humanState(p.uid),t=st.t;st.t=0;const j=JSON.stringify(st);
+    if(CO.hsLast[p.uid]===j)continue;CO.hsLast[p.uid]=j;st.t=t;const z='z:'+await gz(JSON.stringify(st));CO.hsBytes=(CO.hsBytes||0)+z.length;upd[p.uid]=z}
+  if(Object.keys(upd).length)await CO.db.ref(`worlds/${CO.wid}/hs`).update(upd)}
+async function parseHS(v){return typeof v==='string'&&v.startsWith('z:')?JSON.parse(await gunz(v.slice(2))):JSON.parse(v)}
 // a client takes the host's word for its own villages, then re-applies orders the host hasn't seen yet
 function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of LOCAL_HK)keep[k]=S[k];
+  const older=(k,n)=>{const nw=hs.p[k]||[],ids=new Set(nw.map(r=>r.id)),last=nw.length?Math.min(...nw.map(r=>r.t||0)):Infinity;return nw.concat((S[k]||[]).filter(r=>!ids.has(r.id)&&(r.t||0)<last)).slice(0,n)};
+  hs.p.reports=older('reports',150);hs.p.msgs=older('msgs',100);
   const rd=new Set((S.reports||[]).filter(r=>r.read).map(r=>r.id)),md=new Set((S.msgs||[]).filter(r=>r.read).map(r=>r.id));
   for(const k of HK)S[k]=hs.p[k];Object.assign(S,keep);S.reports.forEach(r=>{if(rd.has(r.id))r.read=true});S.msgs.forEach(r=>{if(md.has(r.id))r.read=true});
   S.villages=hs.villages;const ids=new Set(S.villages.map(v=>v.id)),xy=new Set(S.villages.map(v=>v.x+','+v.y));
@@ -2308,9 +2314,10 @@ async function becomeHost(have){
   CO.role='host';showNet('Taking over as host…');
   const snap=have?null:await readSnap();if(snap){S=snap.S;const hsAll=(await CO.db.ref(`worlds/${CO.wid}/hs`).get()).val()||{};
     // fresher personal data from each human overrides the snapshot's copy
-    for(const uid in hsAll){const hs=JSON.parse(hsAll[uid]),p=S.ai.players.find(x=>x.uid===uid);if(!p||hs.t<snap.meta.v)continue;
+    for(const uid in hsAll){const hs=await parseHS(hsAll[uid]),p=S.ai.players.find(x=>x.uid===uid);if(!p||hs.t<snap.meta.v)continue;
       for(const id of p.vids){const v=S.ai.vil[id];if(v)delete S.ai.at[v.x+','+v.y];delete S.ai.vil[id]}p.vids=[];
-      for(const k of HK)p[k]=hs.p[k];for(const v of hs.villages){v.pid=p.id;v.tribe=p.tribe;S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id;p.vids.push(v.id)}
+      const keepL=k=>{const nw=hs.p[k]||[],ids=new Set(nw.map(r=>r.id)),last=nw.length?Math.min(...nw.map(r=>r.t||0)):Infinity;return nw.concat((p[k]||[]).filter(r=>!ids.has(r.id)&&(r.t||0)<last)).slice(0,150)};
+      hs.p.reports=keepL('reports');hs.p.msgs=keepL('msgs');for(const k of HK)p[k]=hs.p[k];for(const v of hs.villages){v.pid=p.id;v.tribe=p.tribe;S.ai.vil[v.id]=v;S.ai.at[v.x+','+v.y]=v.id;p.vids.push(v.id)}
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
     applyRelinks((await CO.db.ref(`worlds/${CO.wid}/relink`).get()).val());aiIndex();_pcacheFor=null;unstash(CO.uid)}
@@ -2421,8 +2428,8 @@ async function coopEnter(){showNet('Loading the world…');
   let sn=null;for(let i=0;i<30;i++){sn=await readSnap();if(sn&&sn.S.ai.players.some(p=>p.uid===CO.uid))break;await new Promise(r=>setTimeout(r,1000))}
   S=sn.S;CO.sv=sn.meta.v;aiIndex();_pcacheFor=null;unstash(CO.uid);CO.role='client';CO.snapAt=Date.now();
   await CO.db.ref(`worlds/${CO.wid}/dg/${CO.uid}`).remove();dgListen();dgPresence();
-  const hs=(await CO.db.ref(`worlds/${CO.wid}/hs/${CO.uid}`).get()).val();if(hs)mergeHS(JSON.parse(hs));
-  CO.db.ref(`worlds/${CO.wid}/hs/${CO.uid}`).on('value',d=>{if(CO.role==='client'&&d.val())mergeHS(JSON.parse(d.val()))});
+  const hs=(await CO.db.ref(`worlds/${CO.wid}/hs/${CO.uid}`).get()).val();if(hs)mergeHS(await parseHS(hs));
+  CO.db.ref(`worlds/${CO.wid}/hs/${CO.uid}`).on('value',async d=>{if(CO.role==='client'&&d.val())mergeHS(await parseHS(d.val()))});
   finishEnter()}
 function finishEnter(){showNet('');document.querySelector('#dlg .close')&&(document.querySelector('#dlg .close').style.display='');closeDlg();render();coopBadge();
   if(!_coT)_coT=setInterval(coopBeat,10000);
