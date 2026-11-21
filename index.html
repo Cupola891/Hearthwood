@@ -343,7 +343,7 @@ function idb(){return _db||(_db=new Promise((ok,no)=>{try{const r=indexedDB.open
 async function idbGet(k){const d=await idb();return new Promise((ok,no)=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}
 async function idbPut(k,v){const d=await idb();return new Promise((ok,no)=>{const tx=d.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=()=>ok();tx.onerror=()=>no(tx.error)})}
 // mark the game as changed; it's written a few seconds later (or right away when the tab is hidden or closed)
-function save(){_oasC=null;if(CO.on)return;_dirty=true;if(!_saveT)_saveT=setTimeout(saveNow,4000)}
+function save(){_oasC=null;if(CO.on)return;_dirty=true;if(!_saveT)_saveT=setTimeout(saveNow,S&&S.ai&&S.ai.players.length>2000?45000:5000)}
 function saveNow(){clearTimeout(_saveT);_saveT=null;if(!S||!_dirty||CO.on)return;_dirty=false;const txt=JSON.stringify(S);
   idbPut(SAVE_KEY,txt).then(()=>{try{localStorage.removeItem(SAVE_KEY)}catch(e){}}).catch(()=>{try{localStorage.setItem(SAVE_KEY,txt)}catch(e){}})}
 function load(){
@@ -1344,6 +1344,7 @@ const UNITS={
   {n:'Settler',a:10,di:80,dc:80,sp:5,cap:3000,up:1,c:[7200,5500,5800,6500],t:31000,b:'adm',settler:1,v:1,tv:1}]
 };
 const SETTLER=9;
+const AI_MAXV=50; // safety ceiling only: how far each opponent expands comes from how they play
 // troop movement on speed servers: classic 3x servers only doubled it (kirilloid); other speeds scale fully
 const troopSpd=()=>S.speed===3?2:S.speed;
 // culture points needed for village number n (index 0 = first village)
@@ -1384,7 +1385,7 @@ function usedSlots(){
 }
 // settlers that can still be trained: three per free expansion slot, minus those already trained or queued
 function settlerRoom(){const U=UNITS[TR()];let chief=0;for(const u in V.troops)if(U[u].chief)chief+=V.troops[u];for(const q of V.train)if(U[q.u].chief)chief+=q.left;
-  const pending=(V.troops[SETTLER]||0)+V.train.filter(q=>q.u===SETTLER).reduce((a,q)=>a+q.left,0),out=S.moves.filter(x=>(x.from===V.id&&x.type==='settle')||(x.fromA===V.id&&x.type==='asettle')).length;
+  const pending=(V.troops[SETTLER]||0)+V.train.filter(q=>q.u===SETTLER).reduce((a,q)=>a+q.left,0),out=_IX?(_IX.st.get(V.id)||0):S.moves.filter(x=>(x.from===V.id&&x.type==='settle')||(x.fromA===V.id&&x.type==='asettle')).length;
   return (expSlots()-(V.founded||0)-out-chief)*3-pending}
 function maxTrain(u,bld){
   const c=UNITS[TR()][u].c.map(v=>v*trainCostX(bld));let m=Math.floor(Math.min(...c.map((v,i)=>V.res[i]/v)));
@@ -1824,12 +1825,12 @@ const ph=(v,on=true)=>on?`${v}${PH}`:`${v}`;
 
 /* ---------- personalities ---------- */
 const PERS={
-  builder: {n:'Builder', econ:.85,off:0,  def:.15,raid:.01,settle:.5,maxV:4,eff:1},
-  raider:  {n:'Raider',  econ:.45,off:.5, def:.05,raid:.35,settle:.3,maxV:3,eff:1},
-  expander:{n:'Expander',econ:.75,off:.1, def:.15,raid:.05,settle:1, maxV:8,eff:1},
-  defender:{n:'Defender',econ:.6, off:0,  def:.4, raid:0,  settle:.4,maxV:3,eff:1},
-  casual:  {n:'Casual',  econ:.8, off:.1, def:.1, raid:.03,settle:.2,maxV:2,eff:.6,quits:1},
-  veteran: {n:'Veteran', econ:.5, off:.45,def:.05,raid:.4, settle:.7,maxV:6,eff:1.25}
+  builder: {n:'Builder', econ:.85,off:0,  def:.15,raid:.01,settle:.5,eff:1},
+  raider:  {n:'Raider',  econ:.45,off:.5, def:.05,raid:.35,settle:.3,eff:1},
+  expander:{n:'Expander',econ:.75,off:.1, def:.15,raid:.05,settle:1, eff:1},
+  defender:{n:'Defender',econ:.6, off:0,  def:.4, raid:0,  settle:.4,eff:1},
+  casual:  {n:'Casual',  econ:.8, off:.1, def:.1, raid:.03,settle:.2,eff:.6,quits:1},
+  veteran: {n:'Veteran', econ:.5, off:.45,def:.05,raid:.4, settle:.7,eff:1.25}
 };
 const MIXES={
   peaceful:{w:{builder:4,expander:2,defender:2,casual:5,raider:.5,veteran:.2},aggro:.15},
@@ -2078,7 +2079,6 @@ function tryCapture(w,home,heroAlive,t){
 /* ---------- the opponents in the endgame ---------- */
 function aiArtStep(p,P,t,R){
   if(!S.arts||!S.arts.length||P.off<.3||lvl(27)<10||(S.arts||[]).some(a=>a.vid===V.id))return;
-  if(S.moves.some(m=>m.fromA===V.id&&m.type==='aatk'))return;
   const hero=aiHeroAt(V);const U=UNITS[p.tribe];let A=0;const offU={};
   for(const u of new Set([...AI_OFF[p.tribe],6,7])){const n=V.troops[u]||0;if(n>0){offU[u]=n;A+=n*U[u].a}}
   const myT=lvl(27);let best=null,bd=1e9;
@@ -2090,7 +2090,7 @@ function aiArtStep(p,P,t,R){
 }
 // alliance members feed and guard a Wonder of their alliance
 function aiWWHelp(p,P,t){
-  if(!p.ally||lvl(17)<1)return;const ww=[...S.villages,...Object.values(S.ai.vil)].find(v=>v.ww&&v.pid!=='nat'&&v!==V&&allyOf(p,v)&&(v.pid?aiP(v.pid).ally===p.ally:S.ally===p.ally));
+  if(!p.ally||lvl(17)<1)return;const ww=(_wwHeld||[]).find(v=>v!==V&&allyOf(p,v)&&(v.pid?aiP(v.pid).ally===p.ally:S.ally===p.ally));
   if(!ww||merchFree()<1||S.moves.some(m=>m.type==='mgo'&&m.mv===V.id&&m.to===ww.id))return;
   const c=caps(),res=V.res.map((x,i)=>Math.floor(Math.max(0,x-c[i]*.35)*.5));const tot=res.reduce((a,b)=>a+b,0);if(tot<1000)return;
   const k=Math.min(1,merchFree()*merchCap()/tot);for(let i=0;i<4;i++){res[i]=Math.floor(res[i]*k);V.res[i]-=res[i]}sendMerch(V,ww,res,t)}
@@ -2153,7 +2153,7 @@ function unstash(uid){const p=humanP(uid);if(!p)return;S.villages=p.vids.map(id=
 function asHuman(uid,fn){const cur=S.me;if(!uid||cur===uid)return fn();const v0=V;stash();unstash(uid);try{return fn()}finally{stash();if(cur)unstash(cur);if(S.villages.includes(v0))V=v0}}
 function humanOfVillage(id){const v=id&&S.ai.vil[id];return v&&isHumanPid(v.pid)?aiP(v.pid).uid:null}
 // which (parked) human an arriving move belongs to
-function moveHuman(m){if(!S.me&&!S.ai.players.some(p=>p.human))return null;
+function moveHuman(m,anyH){if(anyH===undefined?!S.me&&!S.ai.players.some(p=>p.human):!anyH)return null;
   if(m.from)return humanOfVillage(m.from);if(m.type==='ain')return humanOfVillage(m.to);
   if(HOSTILE(m)||m.type==='areinf'){const w=aiAt(m.x,m.y);return w?humanOfVillage(w.id):null}return null}
 function newHuman(uid,name,tribe,quad,t){
@@ -2205,7 +2205,7 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   const rd=new Set((S.reports||[]).filter(r=>r.read).map(r=>r.id)),md=new Set((S.msgs||[]).filter(r=>r.read).map(r=>r.id));
   for(const k of HK)S[k]=hs.p[k];Object.assign(S,keep);S.reports.forEach(r=>{if(rd.has(r.id))r.read=true});S.msgs.forEach(r=>{if(md.has(r.id))r.read=true});
   S.villages=hs.villages;const ids=new Set(S.villages.map(v=>v.id)),xy=new Set(S.villages.map(v=>v.x+','+v.y));
-  S.moves=S.moves.filter(m=>!involves(m,ids,xy)).concat(hs.moves);for(const k in hs.oases)S.oases[k]=hs.oases[k];
+  S.moves=S.moves.filter(m=>!involves(m,ids,xy)).concat(hs.moves);for(const k in hs.oases)S.oases[k]=hs.oases[k];_oasC=null;
   S.cur=Math.min(S.cur||0,S.villages.length-1);V=S.villages[S.cur];
   CO.pending=CO.pending.filter(a=>a.k>hs.ack);for(const a of CO.pending)replay(a);
   if(!dragActive())render()}
@@ -2367,7 +2367,7 @@ function aiSetup(count,mix){
   aiIndex();_pcacheFor=null;S.nat=null;S.arts=[];natSetup();
   aiJoins(now);
 }
-function aiIndex(){S.ai.at={};for(const id in S.ai.vil){const v=S.ai.vil[id];S.ai.at[v.x+','+v.y]=id}}
+function aiIndex(){_oasC=null;S.ai.at={};for(const id in S.ai.vil){const v=S.ai.vil[id];S.ai.at[v.x+','+v.y]=id}}
 const aiAt=(x,y)=>S.ai&&S.ai.at[x+','+y]?S.ai.vil[S.ai.at[x+','+y]]:null;
 let _pcache={},_pcacheFor=null;
 const aiP=id=>{if(_pcacheFor!==S.ai){_pcache={};for(const p of S.ai.players)_pcache[p.id]=p;_pcacheFor=S.ai}return _pcache[id]};
@@ -2430,15 +2430,16 @@ function aiWants(p,P,t){
   const g=gross(),need=Math.max(...[1,2,3,4].map(b=>{const k=fieldPick(B[b].field);return k?Math.max(...cost(b,slotTarget(k)+1)):0}));
   // storage: when the next field won't fit, when stores run over, or (later on) to hold a night's production
   const full=i=>V.res[i]>c[i]*.9,hold=D>=2?(P.econ>.6?5:3):0;
-  if(c[0]<need*1.1||(D>=1&&[0,1,2].some(full))||c[0]<(g[0]+g[1]+g[2])/3*hold)out.push([aiSlotOf(10),10]);
-  if(c[3]<need*1.1||(D>=1&&full(3))||c[3]<g[3]*hold)out.push([aiSlotOf(11),11]);
+  const chiefC=P.off>=.4&&lvl(22)>=20&&lvl(16)>=10?Math.max(...UNITS[p.tribe][8].c)*1.25:0;
+  if(c[0]<need*1.1||(D>=1&&[0,1,2].some(full))||c[0]<(g[0]+g[1]+g[2])/3*hold||c[0]<chiefC)out.push([aiSlotOf(10),10]);
+  if(c[3]<need*1.1||(D>=1&&full(3))||c[3]<g[3]*hold||c[3]<chiefC*.85)out.push([aiSlotOf(11),11]);
   // buildings this player aims for at this stage
   const hit=(V.hits||0)>2&&t-(V.hitT||0)<86400000/S.speed*2;
   const want=[[15,sz(1+D*1.7)],[16,D>=2?(P.off>.3?Math.min(20,sz(1+D*1.6)):1+sz(P.off*D*1.5)):0],[23,D>=1?(hit?10:P.def>.2?4:2):0],[18,D>=2?1:0],
-    [19,P.off+P.def>.05&&D>=2?sz(1+D*(P.off+P.def)*2.2):0],[22,P.off+P.def>.05&&D>=3?sz(Math.min(P.off>.4?20:P.off>.3?15:5,1+D*1.2)):0],
+    [19,P.off+P.def>.05&&D>=2?sz(1+D*(P.off+P.def)*2.2):0],[22,P.off+P.def>.05&&D>=3?(P.off>=.4&&D>=6&&p.vids.length>=2?20:sz(Math.min(P.off>.4?20:P.off>.3?15:5,1+D*1.2))):0],
     [13,P.off+P.def>.05&&D>=3?Math.max(3,sz(D*(P.def>.2?1.3:.6))):0],[12,P.off>.2&&D>=4?Math.max(3,sz(D*1.2)):0],[37,P.off+P.def>.05&&D>=3?(P.raid>.1?Math.min(10,sz(D)):1):0],[20,P.off>.3&&D>=4?sz(D*P.off*2):0],
     [TRIBES[p.tribe].wall,sz(D*(P.def*2.5+.3+(hit?.8:0)))],[17,D>=3?sz(Math.min(10,D*P.econ)):0],
-    [V.capital&&lvl(25)<1?26:25,(p.vids.length<P.maxV&&D>=4+(1-P.settle)*3)||!V.capital?10:V.capital&&D>=6?5:0],[24,D>=7&&(P.settle>.4||P.econ>.7)?(D>=9?10:5):0],[14,P.off>.4&&D>=9&&lvl(16)>=15?sz(D/2):0],[34,V.capital&&D>=8&&lvl(26)>=3?sz(D/2):0],[27,S.nat&&t>natDay('arts')-5*DAY()&&D>=6?(P.off>=.4?20:P.off>=.3||p.ally?10:D>=9&&P.econ>.6?5:0):D>=9&&P.econ>.6?5:0],[40,V.ww&&hasPlan(p.id,t)?100:0],[42,artEff(V,'store')?20:0],[43,artEff(V,'store')?20:0],[28,P.econ>.7&&lvl(17)>=20&&lvl(20)>=10?5:0],[29,!V.capital&&P.off>.5&&lvl(19)>=20?5:0],[35,p.tribe==='T'&&V.capital&&P.off>.3&&lvl(11)>=20&&lvl(16)>=10?5:0],[36,p.tribe==='G'&&D>=3?(hit?sz(D):sz(D/3)):0],[41,p.tribe==='R'&&P.off>.4&&lvl(20)>=20?5:0],[5,D>=9.5?5:0],[6,D>=9.5?5:0],[7,D>=9.5?5:0],[9,D>=9.5?5:0],[8,D>=5?5:0],[21,P.off>.4&&D>=7?10:0],[24,P.settle>.6&&D>=8?5:0]];
+    [25,(p.vids.length<AI_MAXV&&D>=2+(1-P.settle)*4)||(!V.capital&&D>=3)?(V.capital&&p.vids.length>=2&&p.vids.length<AI_MAXV&&D>=6?20:10):0],[26,V.capital&&lvl(25)<1&&D>=9?10:0],[24,D>=7&&(P.settle>.4||P.econ>.7)?(D>=9?10:5):0],[14,P.off>.4&&D>=9&&lvl(16)>=15?sz(D/2):0],[34,V.capital&&D>=8&&lvl(26)>=3?sz(D/2):0],[27,S.nat&&t>natDay('arts')-5*DAY()&&D>=6?(P.off>=.4?20:P.off>=.3||p.ally?10:D>=9&&P.econ>.6?5:0):D>=9&&P.econ>.6?5:0],[40,V.ww&&hasPlan(p.id,t)?100:0],[42,artEff(V,'store')?20:0],[43,artEff(V,'store')?20:0],[28,P.econ>.7&&lvl(17)>=20&&lvl(20)>=10?5:0],[29,!V.capital&&P.off>.5&&lvl(19)>=20?5:0],[35,p.tribe==='T'&&V.capital&&P.off>.3&&lvl(11)>=20&&lvl(16)>=10?5:0],[36,p.tribe==='G'&&D>=3?(hit?sz(D):sz(D/3)):0],[41,p.tribe==='R'&&P.off>.4&&lvl(20)>=20?5:0],[5,D>=9.5?5:0],[6,D>=9.5?5:0],[7,D>=9.5?5:0],[9,D>=9.5?5:0],[8,D>=5?5:0],[21,P.off>.4&&D>=7?10:0],[24,P.settle>.6&&D>=8?5:0]];
   const LV={};for(const k in V.slots){const x=V.slots[k];if(x.l>(LV[x.b]||0))LV[x.b]=x.l}
   const blds=[];for(const [b,lv] of want){if(!lv)continue;const L=LV[b]||0,pend=V.jobs.some(j=>j.b===b);if(L<Math.min(lv,maxLvl(b))&&!pend){const k=aiSlotOf(b);if(k)blds.push([k,b,(lv-L)/lv])}}
   blds.sort((a,b)=>b[2]-a[2]);
@@ -2448,6 +2449,7 @@ function aiWants(p,P,t){
     const avg=n?sum/n:0;
     for(let i=1;i<=18;i++){const k='f'+i,s=V.slots[k],ty=B[s.b].field,tl=slotTarget(k);if(jobAt(k)||tl>=maxLvl(s.b))continue;
       const sc=tl+(ty===3?(r[3]<6+3*D?-.5:1.2):0)+3*V.res[ty]/(g2[ty]*3+400);if(sc<lo){lo=sc;fk=k}}}
+  {const exp=p.vids.length<AI_MAXV&&D>=2+(1-P.settle)*4&&lvl(25)<10&&!V.jobs.some(j=>j.b===25)&&!lvl(26);if(exp){const k=aiSlotOf(25);if(k)out.push([k,25])}}
   const fieldsFirst=u01(hashStr(V.id),V.jobs.length+Math.floor(t/3600000))<.35+P.econ*.5;
   const fo=fk?[fk,V.slots[fk].b]:null;
   if(fieldsFirst&&fo)out.push(fo);
@@ -2475,13 +2477,13 @@ function aiTrainStep(p,P,t){
     if(unitReq(u).every(r=>r.ok)){const c=rCost(u);if(c.every((x,i)=>V.res[i]>=x*1.3)){for(let i=0;i<4;i++)V.res[i]-=c[i];V.rjob={u,end:t+Math.max(1,Math.round(rTime(u)*trainFactor(22)/S.speed))*1000}}break}}}
   // settlers once a Residence reaches level 10
   if(lvl(25)>=10||lvl(26)>=10){const ns=(V.troops[SETTLER]||0)+V.train.filter(q=>q.u===SETTLER).reduce((a,q)=>a+q.left,0);
-    if(p.vids.length<P.maxV&&ns<3&&!canTrain(SETTLER)){const n=Math.min(3-ns,maxTrain(SETTLER));if(n>0)aiQueue(SETTLER,n,t)}}
+    if(p.vids.length<AI_MAXV&&ns<3&&!canTrain(SETTLER)){const n=Math.min(3-ns,maxTrain(SETTLER));if(n>0)aiQueue(SETTLER,n,t)}}
   // the Taskmaster's "train two" task
   if(V.capital&&p.q){const q=aiQuestList(p)[p.q.i];if(q&&q.t==='Train!'&&!canTrain(0)&&maxTrain(0)>=2&&!V.train.some(x=>x.u===0))aiQueue(0,2,t)}
   const hit=(V.hits||0)>2&&t-(V.hitT||0)<86400000/S.speed*2,pdef=hit?Math.max(P.def,.35):P.def;
   const share=P.off+pdef;if(share<=0||V._save)return;
-  const r=rates(),room=r[3]-4-V.L;if(room<=1)return;
-  const queued=V.train.reduce((m,q)=>Math.max(m,q.next+(q.left-1)*q.each*1000),t);if(queued>t+10*3600000)return;
+  const r=rates(),room=r[3]-4-V.L+(P.off>=.4&&p.vids.length>=2?gross()[3]*P.off*.3:0);if(room<=1)return;
+  const queued=V.train.reduce((m,q)=>Math.max(m,q.next+(q.left-1)*q.each*1000),t);if(queued>t+(6+30*(P.off+pdef))*3600000)return;
   const hold=V._hold||[0,0,0,0],spare=V.res.map((x,i)=>Math.max(0,x-hold[i]*P.econ*1.2));V._hold=null;
   for(const [list,f] of [[AI_OFF[p.tribe],P.off],[AI_DEF[p.tribe],pdef]]){if(f<=0)continue;
     const u=aiBestUnit(list);if(u===null)continue;const U=UNITS[p.tribe][u];
@@ -2489,9 +2491,9 @@ function aiTrainStep(p,P,t){
     if(n>=1){aiQueue(u,n,t);for(let i=0;i<4;i++)spare[i]-=U.c[i]*n}}
   // war gear: scouts, rams and catapults in proportion to the army, chiefs when a village can be taken
   if(P.off>=.3){const offN=AI_OFF[p.tribe].reduce((a,u)=>a+(V.troops[u]||0),0),q=u=>(V.troops[u]||0)+V.train.filter(x=>x.u===u).reduce((a,x)=>a+x.left,0);
-    const want=[[scoutUnit(p.tribe),Math.min(30,Math.floor(offN*.04))],...(P.off>=.4?[[6,Math.floor(offN*.08)],[7,Math.floor(offN*.06)]]:[])];
+    const want=[[scoutUnit(p.tribe),Math.floor(offN*.04)],...(P.off>=.4?[[6,Math.floor(offN*.08)],[7,Math.floor(offN*.06)]]:[])];
     for(const [u,w] of want){if(canTrain(u)||q(u)>=w)continue;const U=UNITS[p.tribe][u],n=Math.min(w-q(u),maxTrain(u),Math.floor((r[3]-4)/U.up));if(n>=1)aiQueue(u,n,t)}
-    if(P.off>=.4&&!canTrain(8)&&q(8)<3&&p.cp>=cpNeed(p.vids.length)&&maxTrain(8)>=1&&V.res.every((x,i)=>x>=UNITS[p.tribe][8].c[i]*1.2))aiQueue(8,1,t);
+    if(P.off>=.4&&!canTrain(8)&&p.cp>=cpNeed(p.vids.length)&&maxTrain(8)>=1&&V.res.every((x,i)=>x>=UNITS[p.tribe][8].c[i]*1.2))aiQueue(8,1,t);
     if(lvl(29)>0){const u=aiBestUnit(AI_OFF[p.tribe]);if(u!==null&&UNITS[p.tribe][u].b===19){const U=UNITS[p.tribe][u],n=Math.min(Math.floor(Math.min(...U.c.map((x,i)=>spare[i]*.3/(x*3)))),Math.floor((r[3]-4)/U.up));if(n>=1)aiQueue(u,n,t,29)}}}
 }
 function aiQueue(u,n,t,bld){const U=UNITS[TR()][u],b=bld||trainingBuilding(u),x=trainCostX(b);for(let i=0;i<4;i++)V.res[i]-=U.c[i]*n*x;
@@ -2547,37 +2549,40 @@ const vTribe=v=>v.tribe||S.tribe;
 function sendMerch(v,w,res,t){const tot=res.reduce((a,b)=>a+b,0);if(tot<=0)return;
   const need=Math.ceil(tot/withV(v,merchCap)),h=merchH(vTribe(v),v,w);
   S.moves.push({type:'mgo',mv:v.id,to:w.id,res,merch:need,x:w.x,y:w.y,start:t,end:t+Math.max(1,Math.round(h*3600))*1000})}
-function aiOfferCancel(o,t){const v=S.ai.vil[o.vid];S.ai.offers=mkOffers().filter(x=>x!==o);if(v){aiSync(v,t);const c=withV(v,caps);v.res[o.g]=Math.min(c[o.g],v.res[o.g]+o.ga)}}
+function offDel(o){const a=mkOffers(),i=a.indexOf(o);if(i>=0)a.splice(i,1)}
+function aiOfferCancel(o,t){const v=S.ai.vil[o.vid];offDel(o);if(_offLive)_offLive.delete(o);ixOffer(o,-1);if(v){aiSync(v,t);const c=withV(v,caps);v.res[o.g]=Math.min(c[o.g],v.res[o.g]+o.ga)}}
 function aiMarketStep(p,P,t){
   const mk=lvl(17);if(!mk)return;
   const c=caps(),fill=V.res.map((x,i)=>x/c[i]),cap1=merchCap();let free=merchFree();
   // look through the offers in reach for something we lack, paid with something we have plenty of
   let best=null,bs=0;
-  const look=(o,ov,theirs)=>{if(!ov||ov===V||dist(V,ov)>40||o.g===o.w)return;
+  const look=(o,ov,theirs)=>{if(!ov||ov===V||o.g===o.w)return;
     if(o.maxH&&merchH(p.tribe,V,ov)>o.maxH)return;if(V.res[o.w]<o.wa||Math.ceil(o.wa/cap1)>free)return;
     const gap=fill[o.w]-fill[o.g],ratio=o.ga/o.wa;if(V.res[o.g]+o.ga>c[o.g])return;
     if(gap<.15&&!(ratio>=1.4&&gap>0))return;if(ratio<.8)return;
     const sc=gap*ratio/(1+dist(V,ov)/20);if(sc>bs){bs=sc;best={o,ov,theirs}}};
-  for(const o of mkOffers()){const ov=S.ai.vil[o.vid];if(ov&&ov.pid!==p.id)look(o,ov,false)}
+  {const cx=Math.floor(V.x/40),cy=Math.floor(V.y/40),gw=i=>((i+10)%21+21)%21-10,idx=_offIdx||offIdx(),live=_offLive||new Set(mkOffers()),seen=new Set();
+   for(let i=cx-2;i<=cx+2;i++)for(let j=cy-2;j<=cy+2;j++){const key=gw(i)+','+gw(j);if(seen.has(key))continue;seen.add(key);for(const o of idx[key]||[]){if(!live.has(o))continue;const ov=S.ai.vil[o.vid];if(ov&&ov.pid!==p.id)look(o,ov,false)}}}
   for(const o of S.myOffers||[])look(o,S.villages.find(x=>x.id===o.vid),true);
-  for(const hp of S.ai.players)if(hp.human&&hp.uid!==S.me)for(const o of hp.myOffers||[])look(o,S.ai.vil[o.vid],hp.uid);
+  for(const hp of _hum||S.ai.players)if(hp.human&&hp.uid!==S.me)for(const o of hp.myOffers||[])look(o,S.ai.vil[o.vid],hp.uid);
   if(best){const {o,ov,theirs}=best;V.res[o.w]-=o.wa;
     if(theirs){const done=()=>{S.myOffers=S.myOffers.filter(x=>x.id!==o.id);
       addReport(`${esc(p.name)} accepted your offer`,`<p>${esc(p.name)} took your offer of ${ICON[o.g]} ${fmt(o.ga)} for ${ICON[o.w]} ${fmt(o.wa)}. Your merchants are on their way; theirs are bringing your side to ${esc(ov.name)}.</p>`,'info',t)};if(theirs===true)done();else asHuman(theirs,done)}
-    else S.ai.offers=mkOffers().filter(x=>x!==o);
+    else{offDel(o);if(_offLive)_offLive.delete(o);ixOffer(o,-1)}
     const g=[0,0,0,0],w=[0,0,0,0];g[o.g]=o.ga;w[o.w]=o.wa;
     sendMerch(ov,V,g,t);sendMerch(V,ov,w,t);S.ai.trades=(S.ai.trades||0)+1;free=merchFree()}
   // keep one offer of our own up for what's piling up; take down offers nobody wanted
-  for(const o of mkOffers().filter(o=>o.vid===V.id))if(t-o.t>24*3600000/S.speed)aiOfferCancel(o,t);
-  if(mkOffers().some(o=>o.vid===V.id)||free<1)return;
+  const mine=_IX?[...(_IX.ov.get(V.id)||[])]:mkOffers().filter(o=>o.vid===V.id);
+  for(const o of mine)if(t-o.t>24*3600000/S.speed)aiOfferCancel(o,t);
+  if((_IX?(_IX.ov.get(V.id)||{size:0}).size>0:mkOffers().some(o=>o.vid===V.id))||free<1)return;
   let hi=0,lo=0;for(let i=1;i<4;i++){if(fill[i]>fill[hi])hi=i;if(fill[i]<fill[lo])lo=i}
   if(fill[hi]<.45||V.res[hi]<2*V.res[lo]+500)return;
   const ga=r5(Math.min(free*cap1,(V.res[hi]-V.res[lo])/3));if(ga<200)return;
   const R=rng(Math.floor(t/1000)+V.x*13+V.y),wa=r5(Math.max(ga/2,Math.min(ga*2,ga*(.85+R()*.3+(P.econ>.7?-.05:.05)))));
-  V.res[hi]-=ga;mkOffers().push({id:'x'+t.toString(36)+V.id,vid:V.id,g:hi,ga,w:lo,wa,maxH:0,merch:Math.ceil(ga/cap1),t});
+  V.res[hi]-=ga;const no={id:'x'+t.toString(36)+V.id,vid:V.id,g:hi,ga,w:lo,wa,maxH:0,merch:Math.ceil(ga/cap1),t};mkOffers().push(no);ixOffer(no,1);
 }
 // saving up for settlers, as expanding players do once the Residence allows it
-function aiSaving(p,P){if(!(lvl(25)>=10||lvl(26)>=10)||p.vids.length+(p.settling||0)>=P.maxV||settlerRoom()<=0)return false;
+function aiSaving(p,P){if(!(lvl(25)>=10||lvl(26)>=10)||p.vids.length+(p.settling||0)>=AI_MAXV||settlerRoom()<=0)return false;
   const ns=(V.troops[SETTLER]||0)+V.train.filter(q=>q.u===SETTLER).reduce((a,q)=>a+q.left,0);if(ns>=3)return false;
   return u01(hashStr(V.id),Math.floor(V.last/86400000))<.3+P.settle*.7}
 /* ---------- war: scouting, sieges, chiefs, reinforcements, celebrations ---------- */
@@ -2599,11 +2604,10 @@ function aiWarStep(p,P,t,R){
   const U=UNITS[p.tribe];let A=0;const offU={};
   for(const u of new Set([...AI_OFF[p.tribe],6,7])){const n=V.troops[u]||0;if(n>0&&!U[u].scout){offU[u]=n;A+=n*U[u].a}}
   const chiefs=V.troops[8]||0;if(A<4000&&!(chiefs&&A>1500))return;
-  if(S.moves.some(m=>m.fromA===V.id&&(m.type==='aatk'||m.type==='ascout')))return;
   if(R()>P.raid*.5+(chiefs?.3:0))return;
   p.intel=p.intel||{};const su=scoutUnit(p.tribe),scouts=V.troops[su]||0;
   let best=null,bs=0;
-  for(const c of aiNeighbours(V,16)){const w=c.v;if(allyOf(p,w)||protectedAt(w,t))continue;
+  for(const c of aiNeighbours(V,aiReach(slowest(p.tribe,offU,false)||5,6+P.off*24),60)){const w=c.v;if(allyOf(p,w)||protectedAt(w,t)||aiOutTo(V,w))continue;
     const it=p.intel[w.id],fresh=it&&t-it.t<86400000/S.speed,est=fresh?it.def:vDef(w)*(.5+R());
     if(A<est*1.5)continue;
     const conq=chiefs&&!w.capital&&(fresh?it.rl===0:true);
@@ -2612,12 +2616,13 @@ function aiWarStep(p,P,t,R){
   if(!best)return;
   const {w,fresh,conq}=best;
   if(!fresh&&scouts>=3){aiSend('ascout',p,{[su]:Math.min(scouts,Math.max(3,Math.floor(scouts/2)))},w,t);return}
-  const units={...offU};if(conq)units[8]=Math.min(chiefs,4);
+  const units={...offU};if(conq)units[8]=chiefs;
   const rp=lvl(16),ct=[conq&&rp>=10?'res':rp>=3&&P.raid>.3?'store':'rand'];if(rp>=20&&(units[7]||0)>=20)ct.push(rp>=10?'bld':'rand');
   // Teutons drink before a big push
   if(p.tribe==='T'&&!(p.mead&&t<p.mead.end)){const cv=S.ai.vil[p.vids[0]];if(cv&&withV(cv,()=>lvl(35))>0&&MEAD.c.every((x,i)=>cv.res[i]>=x)){for(let i=0;i<4;i++)cv.res[i]-=MEAD.c[i];p.mead={end:t+MEAD.h*3600000/S.speed,l:withV(cv,()=>lvl(35))}}}
   const hero=aiHeroAt(V);aiSend('aatk',p,units,w,t,{ct,hero:hero&&hero.hp>=60});
 }
+function aiOutTo(v,w){return _IX?_IX.out.has(v.id+'>'+w.x+','+w.y):S.moves.some(m=>m.fromA===v.id&&(m.type==='aatk'||m.type==='ascout')&&m.x===w.x&&m.y===w.y)}
 const fromVil=m=>m.from?S.villages.find(v=>v.id===m.from):S.ai.vil[m.fromA];
 function aiScoutArrive(m,w,ap,attV,back){
   const t=m.end;if(!w){back(m.units,[0,0,0,0]);return}
@@ -2644,27 +2649,29 @@ function aiConquer(w,ap,from,t){
   if(w.slots.wall)w.slots.wall.b=TRIBES[ap.tribe].wall;for(let i=1;i<=18;i++){const s=w.slots['f'+i];if(s.l>10)s.l=10}
   for(const m of S.moves){if(m.to===oldId)m.to=id;if(m.mv===oldId)m.mv=id}
   for(const a of S.arts||[])if(a.vid===oldId)a.vid=id;S._artsV=(S._artsV||0)+1;
-  if(S.oases)for(const k in S.oases)if(S.oases[k].owner===oldId)S.oases[k].owner=null;
+  if(S.oases)for(const k in S.oases)if(S.oases[k].owner===oldId)S.oases[k].owner=null;_oasC=null;
   S.ai.vil[id]=w;S.ai.at[w.x+','+w.y]=id;ap.vids.push(id);from.founded=(from.founded||0)+1;aiDerive(w);_grid=null;
 }
 /* reinforcements: stationed troops stay in the host village's rally point and eat its crop */
 function aiReinfHome(w,t){for(const g of w.reinf||[]){const hv=vById(g.home);if(!hv)continue;const h=marchHours(w,hv,(slowest(g.tribe,g.units)||5)*troopSpd());
   S.moves.push({type:'aret',fromA:g.home,tribe:g.tribe,units:g.units,x:hv.x,y:hv.y,start:t,end:t+Math.max(60,h*3600)*1000})}w.reinf=[]}
+const wrapCell=i=>((i+20)%41+41)%41-20; // 20-field cells on the wrapped map
 function aiReinfStep(p,P,t){
   p.helped=p.helped||{};for(const k in p.helped)if(p.helped[k]<t)delete p.helped[k];
   const du=AI_DEF[p.tribe].filter(u=>(V.troops[u]||0)>=10);
-  if(du.length){for(const m of S.moves){if(m.end<=t)continue;
+  const near=[];if(du.length){if(_IX){const cx=Math.floor(V.x/20),cy=Math.floor(V.y/20);for(let i=cx-3;i<=cx+3;i++)for(let j=cy-3;j<=cy+3;j++){const a=_IX.host.get(wrapCell(i)+','+wrapCell(j));if(a)near.push(...a)}}else near.push(...S.moves)}
+  if(du.length){for(const m of near){if(m.end<=t)continue;
     const fromP=m.fromA?(S.ai.vil[m.fromA]?aiP(S.ai.vil[m.fromA].pid):aiP(m.pid)):null;
     const hostile=(m.type==='araid'||m.type==='aatk')||(!m.fromA&&(m.type==='attack'||m.type==='raid'));if(!hostile)continue;
     if(fromP&&(fromP.id===p.id||(p.ally&&fromP.ally===p.ally)))continue;
-    const w=villageAt(m.x,m.y)||aiAt(m.x,m.y);if(!w||w===V||!allyOf(p,w)||dist(V,w)>20)continue;
+    const w=villageAt(m.x,m.y)||aiAt(m.x,m.y);if(!w||w===V||!allyOf(p,w))continue;
     const key=m.x+','+m.y+','+m.end;if(p.helped[key])continue;
     const units={};let sp=99;for(const u of du){units[u]=Math.floor(V.troops[u]*Math.min(.7,.2+P.def));sp=Math.min(sp,UNITS[p.tribe][u].sp)}
     if(t+marchHours(V,w,sp*troopSpd())*3600000>m.end)continue;
     p.helped[key]=m.end;aiSend('areinf',p,units,w,t,{to:w.id});break}}
   // bring troops home once the danger has passed
   p.stationed=(p.stationed||[]).filter(id=>{const h=vById(id);if(!h||!h.reinf)return false;
-    const busy=S.moves.some(m=>(m.type==='araid'||m.type==='aatk'||m.type==='attack'||m.type==='raid')&&m.x===h.x&&m.y===h.y&&m.end>t);
+    const busy=_IX?_IX.hxy.has(h.x+','+h.y):S.moves.some(m=>(m.type==='araid'||m.type==='aatk'||m.type==='attack'||m.type==='raid')&&m.x===h.x&&m.y===h.y&&m.end>t);
     const mine=h.reinf.filter(g=>g.pid===p.id);if(!mine.length)return false;if(busy)return true;
     const keep=[];for(const g of h.reinf){if(g.pid===p.id&&t-g.t>12*3600000/S.speed){const hv=vById(g.home);if(hv){const hh=marchHours(h,hv,(slowest(g.tribe,g.units)||5)*troopSpd());S.moves.push({type:'aret',fromA:g.home,tribe:g.tribe,units:g.units,x:hv.x,y:hv.y,start:t,end:t+Math.max(60,hh*3600)*1000})}}else keep.push(g)}
     h.reinf=keep;return h.reinf.some(g=>g.pid===p.id)});
@@ -2685,16 +2692,16 @@ function aiNpc(p,c,t){if(t>=(p.prodEnd||0))return false;const tot=V.res.reduce((
 // villages of the same player feed each other
 function aiSupplyStep(p,P,t){if(p.vids.length<2||lvl(17)<1)return;let free=merchFree();if(free<1)return;
   const c=caps(),fill=V.res.map((x,i)=>x/c[i]);if(Math.max(...fill)<.5)return;
-  for(const id of p.vids){const o=S.ai.vil[id];if(!o||o===V||dist(V,o)>30)continue;if(S.moves.some(m=>m.type==='mgo'&&m.to===o.id&&m.mv===V.id))continue;
+  for(const id of p.vids){const o=S.ai.vil[id];if(!o||o===V)continue;if(_IX?_IX.mg.has(o.id+'|'+V.id):S.moves.some(m=>m.type==='mgo'&&m.to===o.id&&m.mv===V.id))continue;
     const oc=withV(o,caps);if(o.res.reduce((a,b)=>a+b,0)>(oc[0]+oc[3])*1.2)continue;
     const cap1=merchCap(),res=V.res.map((x,i)=>fill[i]>.4?Math.floor(Math.min(x*.3,oc[i]-o.res[i])):0);let tot=res.reduce((a,b)=>a+b,0);
     if(tot<500)continue;const k=Math.min(1,free*cap1/tot);for(let i=0;i<4;i++){res[i]=Math.floor(res[i]*k);V.res[i]-=res[i]}
     sendMerch(V,o,res,t);break}}
 // players without an alliance look for one once they have an Embassy, or found their own at level 3
 function aiAllyStep(p,P,t,R){if(p.ally||!V.capital||lvl(18)<1||R()>.15)return;const A=S.ai;
-  let best=null,bd=1e9;for(const a of A.alli){if(a.mine)continue;const d=dist(a,V);if(d<bd&&a.members<60){bd=d;best=a}}
+  let best=null,bd=1e9;for(const a of A.alli){if(a.mine)continue;const d=dist(a,V);if(d<bd&&a.members<allyRoom(a)){bd=d;best=a}}
   if(best&&bd<25){p.ally=best.id;best.members++;return}
-  if(lvl(18)>=3)p.ally=allyNew(V.x,V.y).id}
+  if(lvl(18)>=3)p.ally=allyNew(V.x,V.y,p.id).id}
 // one look at the account while online
 function aiThink(p,t){
   const P=PERS[p.pers],R=rng(Math.floor(t/1000)+p.vids.length*7+hashStr(p.id));
@@ -2739,11 +2746,6 @@ function aiJoins(t){
     if(!p.joined&&p.join<=t){
       const spot=freeValleyNear(p.home.x,p.home.y,0,6,rng(Math.floor(t)+p.name.length*7));
       if(spot){aiFound(p,spot.x,spot.y,spot.type,t);p.joined=true;p.first=t;if(p.quit<Infinity&&t>p.join+3600000)p.quit+=t-p.join;
-        const R=rng(p.id.length*997+Math.floor(t/1000));
-        if(R()<.55){
-          let best=null,bd=1e9;for(const a of A.alli){if(a.mine)continue;const d=dist(a,spot);if(d<bd&&a.members<18){bd=d;best=a}}
-          if(best&&bd<25){p.ally=best.id;best.members++}else if(R()<.35){p.ally=allyNew(spot.x,spot.y).id}
-        }
       }else p.join=t+3600000;
     }
     if(p.active&&t>p.quit)p.active=false;
@@ -2751,7 +2753,9 @@ function aiJoins(t){
 }
 // one step of the world: who logs in, and what they do while they are on
 function aiStep(t0,t){
-  const A=S.ai,step=t-t0,stepH=step/3600000;aiJoins(t);natTick(t);_grid=aiGrid();
+  const A=S.ai,step=t-t0,stepH=step/3600000;aiJoins(t);_hum=A.players.filter(h=>h.human);_alCap=new Map();natTick(t);_grid=aiGrid();_offIdx=offIdx();_offLive=new Set(mkOffers());
+  const ixArr=ixBuild();
+  _wwHeld=[];for(const id in A.vil){const v=A.vil[id];if(v.ww&&v.pid!=='nat')_wwHeld.push(v)}for(const v of S.villages)if(v.ww)_wwHeld.push(v);
   for(const p of A.players){
     if(!p.joined||!p.active||!p.vids.length||p.nat||p.human)continue;
     const fresh=p.first&&t-p.first<=step*1.01;
@@ -2759,26 +2763,48 @@ function aiStep(t0,t){
     const h=hashStr(p.id)^Math.floor(t/60000),P=PERS[p.pers];
     const start=fresh?Math.max(t0,p.first):t0+u01(h,1)*step,len=(fresh?40:6+u01(h,2)*30*(P.eff||1))*60000,end=Math.min(fresh?start+len:t,start+len);
     let tau=start;
-    for(let k=0;k<14&&tau<=end;k++){
+    for(let k=0;k<500&&tau<=end;k++){
       aiThink(p,tau);
       let nx=Infinity;for(const id of p.vids){const v=S.ai.vil[id];if(!v)continue;for(const j of v.jobs)if(j.end>tau&&j.end<nx)nx=j.end}
       if(nx>end)break;tau=nx+1000;
     }
   }
+  ixDone(ixArr);_hum=null;_alCap=null;
   // loyalty comes back 1% per hour per Residence/Palace level
   const dtH=step/3600000*S.speed;
   for(const id in A.vil){const v=A.vil[id];if(v.loy<100)v.loy=Math.min(100,v.loy+(v.rl||0)*dtH)}
 }
-let _grid=null;
+let _hum=null,_grid=null,_wwHeld=null,_offIdx=null,_offLive=null,_IX=null;
+// per-step index of movements, so opponents don't rescan every troop and merchant in the world on each login
+const hostileMv=m=>m.type==='araid'||m.type==='aatk'||(!m.fromA&&(m.type==='attack'||m.type==='raid'));
+function ixAdd(m){const I=_IX;if(!I)return;
+  if(hostileMv(m)){const k=Math.floor(m.x/20)+','+Math.floor(m.y/20);let a=I.host.get(k);if(!a)I.host.set(k,a=[]);a.push(m);I.hxy.add(m.x+','+m.y)}
+  const mv=(m.type==='mgo'||m.type==='mret')?m.mv:(m.type==='trade'||m.type==='mback'||m.type==='offer'||m.type==='otrade')?m.from:null;
+  if(mv)I.mb.set(mv,(I.mb.get(mv)||0)+(m.merch||0));
+  const sv=m.type==='asettle'?m.fromA:m.type==='settle'?m.from:null;if(sv)I.st.set(sv,(I.st.get(sv)||0)+1);if(m.type==='mgo')I.mg.add(m.to+'|'+m.mv);if(m.fromA&&(m.type==='aatk'||m.type==='ascout'))I.out.add(m.fromA+'>'+m.x+','+m.y)}
+function ixBuild(){_IX={host:new Map(),hxy:new Set(),mb:new Map(),st:new Map(),ov:new Map(),mg:new Set(),out:new Set()};for(const m of S.moves)ixAdd(m);for(const o of mkOffers())ixOv(o,1);
+  for(const o of mkOffers())_IX.mb.set(o.vid,(_IX.mb.get(o.vid)||0)+o.merch);for(const o of S.myOffers||[])_IX.mb.set(o.vid,(_IX.mb.get(o.vid)||0)+o.merch);
+  const arr=S.moves;arr.push=function(...ms){for(const m of ms)ixAdd(m);return Array.prototype.push.apply(this,ms)};return arr}
+function ixDone(arr){if(arr)delete arr.push;_IX=null}
+function ixOffer(o,sign){if(_IX){_IX.mb.set(o.vid,(_IX.mb.get(o.vid)||0)+sign*o.merch);ixOv(o,sign)}}
+function ixOv(o,sign){const M=_IX.ov;let a=M.get(o.vid);if(sign>0){if(!a)M.set(o.vid,a=new Set());a.add(o)}else if(a)a.delete(o)}
+// open offers bucketed by area, so each opponent only looks at offers within reach
+function offIdx(){const g={};for(const o of mkOffers()){const v=S.ai.vil[o.vid];if(!v)continue;const k=Math.floor(v.x/40)+','+Math.floor(v.y/40);(g[k]=g[k]||[]).push(o)}return g}
 function aiGrid(){const g={};for(const id in S.ai.vil){const o=S.ai.vil[id],k=Math.floor(o.x/12)+','+Math.floor(o.y/12);(g[k]=g[k]||[]).push(o)}return g}
-function aiNeighbours(v,rad){
-  const out=[],g=_grid||aiGrid(),cx=Math.floor(v.x/12),cy=Math.floor(v.y/12),gw=i=>((i+34)%67+67)%67-34,seen=new Set();
-  for(let i=cx-1;i<=cx+1;i++)for(let j=cy-1;j<=cy+1;j++){const key=gw(i)+','+gw(j);if(seen.has(key))continue;seen.add(key);for(const o of g[key]||[]){if(o===v||wwLocked(o))continue;const d=dist(o,v);if(d<=rad)out.push({kind:'a',v:o,d})}}
+// villages within rad, searched outwards ring by ring; with want set, stop once that many candidates are found
+function aiNeighbours(v,rad,want){
+  const out=[],g=_grid||aiGrid(),cx=Math.floor(v.x/12),cy=Math.floor(v.y/12),gw=i=>((i+34)%67+67)%67-34,seen=new Set(),cr=Math.min(34,Math.ceil(rad/12));
+  for(let r=0;r<=cr;r++){
+    for(let i=cx-r;i<=cx+r;i++)for(let j=cy-r;j<=cy+r;j++){if(Math.max(Math.abs(i-cx),Math.abs(j-cy))!==r)continue;const key=gw(i)+','+gw(j);if(seen.has(key))continue;seen.add(key);for(const o of g[key]||[]){if(o===v||wwLocked(o))continue;const d=dist(o,v);if(d<=rad)out.push({kind:'a',v:o,d})}}
+    if(want&&out.length>=want&&r>=1)break}
   for(const pv of S.villages){const d=dist(pv,v);if(d<=rad)out.push({kind:'p',v:pv,d})}
   return out;
 }
+// how far they look: as far as their troops get in the hours this player is willing to march
+function aiReach(sp,hours){return Math.max(8,Math.min(400,sp*troopSpd()*hours))}
 function aiLaunchRaid(v,p,ou,t,aggro,R){
-  const cands=aiNeighbours(v,12).filter(c=>{
+  const P=PERS[p.pers];
+  const cands=aiNeighbours(v,aiReach(UNITS[p.tribe][ou].sp,P.raid>.3?3:2),40).filter(c=>{
     if(c.kind==='a'){const op=aiP(c.v.pid);return op.id!==p.id&&!(p.ally&&op.ally===p.ally)&&!(t<op.protEnd)}
     if(t<S.protEnd)return false;
     if(p.ally&&S.ally===p.ally)return false;
@@ -2811,8 +2837,6 @@ function playerDefEst(){const U=UNITS[TR()];let d=0;for(const u in V.troops)d+=V
 function aiCatchUp(now){
   if(!S.ai)return;
   const step=Math.max(60000,3600000/S.speed);
-  // never simulate more than 60 game-days at once
-  if(now-S.ai.last>60*86400000/S.speed)S.ai.last=now-60*86400000/S.speed;
   let did=false;
   while(S.ai.last+step<=now){
     const t0=S.ai.last,t=t0+step;
@@ -2964,14 +2988,14 @@ function returnHome(m,units,hero,res,t){
 
 /* ---------- arrivals ---------- */
 function processMoves(t){
-  S.moves.sort((a,b)=>a.end-b.end);
-  let n=0;
-  while(S.moves.length&&S.moves[0].end<=t){
-    const m=S.moves.shift(),hu=S.ai?moveHuman(m):null;
-    asHuman(hu,()=>{S.villages.forEach(v=>withV(v,()=>advanceV(m.end)));
-    accrueCP(m.end);heroTick(m.end);
-    _oasC=null;arrive(m)});n++;
-  }
+  let n=0;const anyH=!!(S.ai&&(S.me||S.ai.players.some(p=>p.human)));
+  // take everything due in one pass (arrivals can add more that are due; go round again for those)
+  for(let g=0;g<100;g++){const due=[],rest=[];for(const m of S.moves)(m.end<=t?due:rest).push(m);if(!due.length)break;
+    due.sort((a,b)=>a.end-b.end);S.moves=rest;
+    for(const m of due){const hu=S.ai?moveHuman(m,anyH):null;
+      asHuman(hu,()=>{S.villages.forEach(v=>withV(v,()=>advanceV(m.end)));
+      accrueCP(m.end);heroTick(m.end);
+      arrive(m)});n++}}
   return n;
 }
 function arriveCombat(m){
@@ -3058,7 +3082,7 @@ function playerAttackArrive(m){
       if(o.owner)extra+='<p>This oasis already belongs to one of your villages.</p>';
       else if(dist(from,{x:m.x,y:m.y})>3.5)extra+='<p>The oasis is too far from your village to annex (must be within 3 fields).</p>';
       else if(owned>=slots)extra+=`<p>Your Hero's Mansion needs a higher level to annex another oasis (${owned}/${slots}).</p>`;
-      else{o.owner=m.from;extra+=`<p><b>Your hero annexed the oasis for ${esc(from.name)}!</b></p>`}
+      else{o.owner=m.from;_oasC=null;extra+=`<p><b>Your hero annexed the oasis for ${esc(from.name)}!</b></p>`}
     }
   }
   const won=r.win&&sumUnits(surv)+(heroOk?1:0)>0;
@@ -3086,7 +3110,7 @@ function aiRaidArrive(m){
       const aLost=applyLoss(m.units,r.aL),surv=subUnits(m.units,aLost),dLost=applyLoss(anm,r.dL);for(const a in dLost)o.an[a]=Math.max(0,(o.an[a]||0)-dLost[a]);
       if(ah){aiHeroHurt(ap,r.aL);aiHeroXp(ap,xpFrom('N',dLost))}
       if(ah&&ah.state!=='dead'&&attV&&!o.owner&&Object.values(o.an).every(n=>n<1)&&dist(attV,{x:m.x,y:m.y})<=3.5){
-        const ml=withV(attV,()=>lvl(37)),sl=ml>=20?3:ml>=15?2:ml>=10?1:0,own=Object.values(S.oases).filter(x=>x.owner===attV.id).length;if(own<sl)o.owner=attV.id}
+        const ml=withV(attV,()=>lvl(37)),sl=ml>=20?3:ml>=15?2:ml>=10?1:0,own=Object.values(S.oases).filter(x=>x.owner===attV.id).length;if(own<sl){o.owner=attV.id;_oasC=null}}
       back(surv,[0,0,0,0]);return}
     back(m.units,[0,0,0,0]);return}
   if(w.pid)aiSync(w,t);
@@ -3138,7 +3162,7 @@ function conquer(tgt,from,t){
   v.id='v'+t.toString(36)+Math.floor(Math.random()*1e4);
   for(const m of S.moves){if(m.to===oldId)m.to=v.id;if(m.mv===oldId)m.mv=v.id}
   for(const a of S.arts||[])if(a.vid===oldId)a.vid=v.id;S._artsV=(S._artsV||0)+1;
-  if(S.oases)for(const k in S.oases)if(S.oases[k].owner===oldId)S.oases[k].owner=null;
+  if(S.oases)for(const k in S.oases)if(S.oases[k].owner===oldId)S.oases[k].owner=null;_oasC=null;
   delete v.pid;delete v.tribe;delete v.popC;delete v.L;delete v.rl;delete v.wall;
   v.capital=false;v.jobs=[];v.train=[];v.rjob=null;v.ujobs=[];v.party=null;v.troops={};v.research=[0];v.up={a:{},d:{}};v.founded=0;
   // tribe-specific buildings don't survive the change of owner; the wall becomes your tribe's wall
@@ -3165,9 +3189,14 @@ function pageMessages(){
    ${S.ally?`<p>You are a member of <b><a href="#" onclick="setView('ally');return false">${esc(allyName(S.ally))}</a></b>. Its members won't attack you. <a href="#" onclick="if(S.ally===S.allyMine){disbandAlly()}else{S.ally=null}save();openPage('msg');return false">${S.ally===S.allyMine?'Disband alliance':'Leave alliance'}</a></p>`:''}</div>`;
 }
 const ALLY_A=['Iron','Red','Silver','Golden','Stone','Night','Grey','River','Old','Copper','Amber','Hollow','Black','Sun','Moon','Storm','Ash','Oak','Frost','Ember','High','Deep','Wild','White'],ALLY_B=['Oaks','Hearth','Ford','Crown','Circle','Owls','Wolves','Pact','Guard','Hill','Field','Pines','Mill','Banner','Shield','Legion','Tower','Gate','Hounds','Ravens','Keep','Vale','Watch','Brothers'];
-function allyNew(x,y){const A=S.ai,i=A.alli.length,n=i<ALLY.length?ALLY[i]:`${ALLY_A[i%ALLY_A.length]} ${ALLY_B[Math.floor(i/ALLY_A.length)%ALLY_B.length]}${i>=ALLY_A.length*ALLY_B.length?' '+(Math.floor(i/(ALLY_A.length*ALLY_B.length))+1):''}`;const al={id:'al'+i,name:n,x,y,members:1};A.alli.push(al);return al}
+function allyNew(x,y,lead){const A=S.ai,i=A.alli.length,n=i<ALLY.length?ALLY[i]:`${ALLY_A[i%ALLY_A.length]} ${ALLY_B[Math.floor(i/ALLY_A.length)%ALLY_B.length]}${i>=ALLY_A.length*ALLY_B.length?' '+(Math.floor(i/(ALLY_A.length*ALLY_B.length))+1):''}`;const al={id:'al'+i,name:n,x,y,members:1,lead:lead||null};A.alli.push(al);return al}
+// room in an alliance: 3 members per level of the leader's highest Embassy, for everyone
+let _alCap=null;
+function allyRoom(a){if(a.mine)return allyCap();const lp=a.lead&&aiP(a.lead);if(!lp)return 60;
+  if(_alCap&&_alCap.has(a.id))return _alCap.get(a.id);
+  let e=0;for(const id of lp.vids){const v=S.ai.vil[id];if(v)e=Math.max(e,withV(v,()=>lvl(18)))}const c=3*e;if(_alCap)_alCap.set(a.id,c);return c}
 const allyName=id=>{if(!S.ai)return '?';const i=+String(id).slice(2),a=S.ai.alli[i]&&S.ai.alli[i].id===id?S.ai.alli[i]:S.ai.alli.find(x=>x.id===id);return a?a.name:'?'};
-function joinAlliance(id){if(withV(V,()=>lvl(18))<1&&!S.villages.some(v=>withV(v,()=>lvl(18))>0))return toast('You need an Embassy to join an alliance.');S.ally=id;save();toast('You joined '+allyName(id)+'.');openPage('msg')}
+function joinAlliance(id){if(withV(V,()=>lvl(18))<1&&!S.villages.some(v=>withV(v,()=>lvl(18))>0))return toast('You need an Embassy to join an alliance.');{const a=S.ai.alli.find(x=>x.id===id);if(a&&a.members>=allyRoom(a))return toast(allyName(id)+' is full.')}S.ally=id;save();toast('You joined '+allyName(id)+'.');openPage('msg')}
 let statTab='pl';
 function pageStats(){
   const rows=[];
@@ -3201,7 +3230,7 @@ const resAmt=(i,n)=>`<span class="ra">${ICON[i]}<span>${fmt(n)}</span></span>`;
 const merchH=(tribe,a,b)=>dist(a,b)/(MERCH[tribe].sp*S.speed);
 const RES_SEL=(id,sel)=>`<select id="${id}">${RES.map((n,i)=>`<option value="${i}" ${i===sel?'selected':''}>${n}</option>`).join('')}</select>`;
 function merchCap(){return Math.round(MERCH[TR()].cap*(1+0.1*lvl(28)))}
-function merchBusy(){let n=0;for(const m of S.moves){if((m.type==='trade'||m.type==='mback'||m.type==='offer'||m.type==='otrade')&&m.from===V.id)n+=m.merch||0;if((m.type==='mgo'||m.type==='mret')&&m.mv===V.id)n+=m.merch||0}
+function merchBusy(){if(_IX&&V.pid)return _IX.mb.get(V.id)||0;let n=0;for(const m of S.moves){if((m.type==='trade'||m.type==='mback'||m.type==='offer'||m.type==='otrade')&&m.from===V.id)n+=m.merch||0;if((m.type==='mgo'||m.type==='mret')&&m.mv===V.id)n+=m.merch||0}
   for(const o of S.myOffers||[])if(o.vid===V.id)n+=o.merch;for(const o of mkOffers())if(o.vid===V.id)n+=o.merch;return n}
 function merchFree(){return Math.max(0,lvl(17)-merchBusy())}
 function marketSection(){
@@ -3263,7 +3292,7 @@ function acceptOffer(id){
   const o=mkOffers().find(x=>x.id===id),a=o&&S.ai.vil[o.vid];if(!a){openSlot(dlgState.k);return toast('That offer has already been taken.')}
   if(V.res[o.w]<o.wa)return toast('Not enough resources.');
   const need=Math.ceil(o.wa/merchCap());if(need>merchFree())return toast(`That needs ${need} merchant${need>1?"s":""}; ${merchFree()} ${merchFree()===1?"is":"are"} free.`);
-  V.res[o.w]-=o.wa;S.ai.offers=mkOffers().filter(x=>x!==o);
+  V.res[o.w]-=o.wa;offDel(o);if(_offLive)_offLive.delete(o);
   dealMoves(V,a,o.w,o.wa,o.g,o.ga,Date.now());
   save();render();openSlot(dlgState.k);toast('Deal accepted. Merchants are on their way.');
 }
@@ -3855,7 +3884,7 @@ document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.shiftKey&&(e.key==='D'||
   load();
   if(S){await catchUp();advance(Date.now());save();render()}else{S=null;showStart()}
   setInterval(()=>{if(!catchUp.on)tick()},1000);
-  setInterval(()=>S&&_dirty&&saveNow(),30000);
+  setInterval(()=>S&&_dirty&&saveNow(),120000);
   window.addEventListener('beforeunload',()=>S&&(_dirty=true,saveNow()));
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&S){_dirty=true;saveNow()}});
 })();
