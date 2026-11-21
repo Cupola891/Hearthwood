@@ -398,7 +398,7 @@ function load(){
     // units already owned count as researched (older saves skipped research for some)
     S.villages.forEach(v=>{for(const u in v.troops)if(v.troops[u]>0&&!v.research.includes(+u))v.research.push(+u)});
     if(!S.ai)aiSetup(150,'normal');
-    fixQuit(S);aiRequitOnce();questMigrate();
+    fixQuit(S);aiRequitOnce();questMigrate();questRepair();
     if(!S.prodEnd)S.prodEnd=S.protEnd||S.created+72*3600000;else{aiIndex();if(!S.ai.ver){const n=Date.now();S.ai.players.forEach(p=>{if(!p.joined&&Math.random()<.7)p.join=n-1});S.ai.ver=2}}
     if(S.ai.ver<3)aiMigrate();}
 }
@@ -2282,7 +2282,15 @@ function aiRequitOnce(){if(!S||!S.ai||S.ai.qv>=2)return;const A=S.ai,now=Date.no
   for(const p of P)if(R()<Math.min(1,k*QUIT_W[p.pers])){const st=p.joined?(p.first||p.join):p.join;let q=st+(5+16*Math.sqrt(R()))*D;if(q<now)q=now+R()*D;p.quit=q}
   A.qv=2}
 function questMigrate(){if(!S||!S.ai||(S.ai.qlv||0)>=2)return;const at=QUESTS.findIndex(q=>q.t==='Travelling merchant');
-  const bump=q=>{if(q&&typeof q.i==='number'&&q.i>=at&&q.i<99)q.i++};bump(S.quest);for(const p of S.ai.players){if(p.human)bump(p.quest);else bump(p.q)}S.ai.qlv=2}
+  // the host's own progress can sit in two places that are the same record: move each record once
+  const seen=new Set(),bump=q=>{if(!q||seen.has(q))return;seen.add(q);if(typeof q.i==='number'&&q.i>=at&&q.i<99)q.i++};
+  bump(S.quest);for(const p of S.ai.players){if(p.human)bump(p.quest);else bump(p.q)}S.ai.qlv=3}
+// worlds moved by the first version of the above: a host could be moved two places. Put back anyone whose previous task isn't done yet.
+function questRepair(){if(!S||!S.ai||(S.ai.qlv||0)!==2)return;
+  const fix=()=>{const L=questList(),q=S.quest;if(!q||q.off||!(q.i>0)||q.i>=L.length)return;const prev=L[q.i-1];if(!prev||prev.ask||prev.pay||prev.choose||!prev.ok)return;
+    let done=true;try{done=!!prev.ok()}catch(e){}if(!done)q.i--};
+  for(const p of S.ai.players.filter(p=>p.human)){if(p.uid===S.me)fix();else asHuman(p.uid,fix)}
+  S.ai.qlv=3}
 // a saved world stores "never quits" as null; read it back as never, and bring back anyone that mistake retired
 function fixQuit(W){if(!W||!W.ai)return;for(const p of W.ai.players)if(p.quit===null||p.quit===undefined){p.quit=Infinity;if(p.joined&&!p.nat&&!p.active)p.active=true}}
 /* ---------- each human's own part, published every few seconds by the host ---------- */
@@ -2415,7 +2423,7 @@ async function becomeHost(have){
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
     applyRelinks((await CO.db.ref(`worlds/${CO.wid}/relink`).get()).val());aiIndex();_pcacheFor=null;unstash(CO.uid)}
-  fixFriendNames();aiRequitOnce();questMigrate();
+  fixFriendNames();aiRequitOnce();questMigrate();questRepair();
   if(!S.villages||!S.villages.length){showNet('Could not find your villages in this world. Reload the page to try again.');CO.role=null;return}
   await catchUp();advance(Date.now());render();showNet('');
   CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.sid===CO.sid)return;
@@ -2556,7 +2564,7 @@ function aiSetup(count,mix){
   const n={};for(const p of S.ai.players)n[p.pers]=(n[p.pers]||0)+1;const N=S.ai.players.length;
   k=1;for(let it=0;it<40;it++){const sh=keys.reduce((a,x)=>a+(n[x]||0)/N*Math.min(1,k*QUIT_W[x]),0);k*=target/Math.max(.01,sh)}
   for(const p of S.ai.players)if(R()<Math.min(1,k*QUIT_W[p.pers]))p.quit=Math.max(p.join,now)+(5+16*Math.sqrt(R()))*D;
-  S.ai.qv=2;S.ai.qlv=2;
+  S.ai.qv=2;S.ai.qlv=3;
   S.ai.players.sort((a,b)=>a.join-b.join);
   // early arrivals settle near the middle, later ones further out, as on a real server
   S.ai.players.forEach((p,i)=>{const rad=NAT_R+3+Math.sqrt(i+1)*1.6*(0.8+R()*0.4),a=R()*Math.PI*2;p.home={x:wrapC(Math.round(Math.cos(a)*rad)),y:wrapC(Math.round(Math.sin(a)*rad))}});
