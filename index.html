@@ -112,6 +112,7 @@ sup.ph{color:#c0392b;font-weight:bold;cursor:help;margin-left:1px}
 #qbtn{position:absolute;left:6px;top:6px;z-index:6;width:58px;height:58px;border-radius:50%;border:3px solid #8a6a3c;background:radial-gradient(#fffaf0,#efe0bb);box-shadow:0 3px 0 #6e5330,0 5px 10px rgba(0,0,0,.25);cursor:pointer;align-items:center;justify-content:center;padding:0}
 #qbtn .qb{display:none;position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border-radius:50%;width:22px;height:22px;font-weight:bold;font-size:14px;line-height:22px}
 #qbtn.ready .qb{display:block}#qbtn.ready{animation:qpulse 1.4s ease-in-out infinite}
+#qbtn.first .qb{display:block}#qbtn.first::after{content:'';position:absolute;inset:-9px;border:3px solid #d0352b;border-radius:50%;animation:qring 1.2s ease-in-out infinite;pointer-events:none}
 @keyframes qpulse{50%{transform:scale(1.08)}}
 .qflash{background:#eaf5df;border:1px solid #9cc68a;border-radius:6px;padding:6px 8px;margin-bottom:8px}
 .navbtn .nb{position:absolute;top:-4px;right:-4px;background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 6px;font-weight:bold}
@@ -2154,7 +2155,7 @@ function spawnSpot(q){const R=rng(Math.floor(Math.random()*1e9)),settled=S.ai?Ob
    ===================================================================== */
 const FB_CONFIG=window.__FB_CONFIG||{apiKey:"AIzaSyCXrBGCG6y4k4G5YsDdRyByWZh0qXpJ_n0",authDomain:"hearthwood-c9840.firebaseapp.com",databaseURL:"https://hearthwood-c9840-default-rtdb.firebaseio.com",projectId:"hearthwood-c9840",storageBucket:"hearthwood-c9840.firebasestorage.app",messagingSenderId:"936840765328",appId:"1:936840765328:web:db68cbf697848c68201d15"};   // replace null with your config; paste your Firebase web app config object here, e.g. {apiKey:"...",authDomain:"...",databaseURL:"...",projectId:"...",appId:"..."}
 // what belongs to each human rather than to the world
-const HK=['sent','dmq','ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
+const HK=['qSeen','sent','dmq','ally','hero','quest','mapC','mapZ','myOffers','reports','msgs','invites','player','allyMine','tokens','protEnd','prodEnd','mead','cur','cp','cpLast','tribe','nextInvite','pageSel','npcEnd'];
 const LOCAL_HK=['mapC','mapZ','pageSel','cur'];
 async function worldKey(pub,pw){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pub+':'+pw));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')}
 const CO={sid:Math.random().toString(36).slice(2),pub:null,on:false,role:null,uid:null,wid:null,db:null,pending:[],seq:0,ackOf:{},headless:false,snapAt:0,lastHS:null,hostName:''};
@@ -2182,7 +2183,7 @@ function newHuman(uid,name,tribe,quad,t){
   const sp=spawnSpot(quad||''),v=makeVillage('New village',sp.x,sp.y,layoutFor(3),true,t);v.pid=p.id;v.tribe=tribe;
   S.ai.vil[v.id]=v;S.ai.at[sp.x+','+sp.y]=v.id;p.vids.push(v.id);p.mapC={x:sp.x,y:sp.y};aiDerive(v);return p}
 /* ---------- orders: the host replays a friend's click with the inputs they had filled in ---------- */
-const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','sendDM','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
+const ACT=['applySettings','rebuildAI','acceptOffer','cancelOffer','doCancel','doRename','doSend','foundAlly','freePrisoners','heroPt','inviteToAlly','joinAlliance','sendDM','markQuestSeen','setRank','kickMember','makeLeader','leaveAlly','inviteByName','cancelInvite','saveAllyDesc','allyMail','npcTrade','postOffer','questAnswer','questBranch','questCollect','reviveHero','sendRes','settle','startBuild','startMead','startParty','startResearch','startTrain','startUpgrade','trainHero','moveBuilding','disbandAlly','openPage','testFinishAll','testAdd','abandonOasis','questMap','setVillageName'];
 function abandonOasis(k){if(S.oases&&S.oases[k])S.oases[k].owner=null;save();if(dlgState)openSlot(dlgState.k)}
 function questMap(){if(S.quest)S.quest.map=1}
 function capture(fn,args){const inputs={},radios={};document.querySelectorAll('input,select,textarea').forEach(e=>{if(e.type==='radio'){if(e.checked)radios[e.name]=e.value}else if(e.id)inputs[e.id]={value:String(e.value??''),checked:!!e.checked}});
@@ -2237,7 +2238,7 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   if(!dragActive())render()}
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- the world around each friend: only what changed; near things every minute, the wider area every 10 minutes, the rest hourly ---------- */
-const GAME_VER='2026-11-21';
+const GAME_VER='2026-11-21b';
 const DG_NEAR=20,DG_MID=100,DG_LOOK=25;
 function dgVSig(v){return [v.pid,v.name,v.capital?1:0,v.ww?wwLvl(v):0,Math.floor(v.loy??100),v.wall||0,v.rl||0].join('|')}
 function dgPSig(p){return [p.name,p.ally||'',p.active?1:0,p.vids.join(',')].join('|')}
@@ -3573,7 +3574,7 @@ function questReward(q){
 }
 function questDone(msg){S.quest.i++;save();render();openQuest(msg)}
 function openQuest(flash){
-  advance(Date.now());dlgState=null;const q=curQuest();
+  if(!S.qSeen)markQuestSeen();advance(Date.now());dlgState=null;const q=curQuest();
   if(!q){openDlg('Taskmaster',`${flash?`<div class="qflash">${flash}</div>`:''}<p>${S.quest&&S.quest.off?'You set the tasks aside.':'That is everything I can teach you. The rest of the world is yours to discover. Good luck!'}</p>`);return}
   questStart(q);save();renderTop();
   const list=questList(),n=S.quest.i+1,rw=q.rw==='wood'?q.rwText:q.rw==='rat'?'An army.':q.rw==='tok'?'4 free resource-field upgrades from level 2 to level 3.':q.rw?`<div class="cost">${q.rw.map((v,i)=>`<span>${ICON[i]}${v}</span>`).join('')}</div>`:'<span class="muted">None</span>';
@@ -3603,7 +3604,9 @@ function questAnswer(){const q=curQuest();if(!q)return;let ok;
   questDone(questReward(q))}
 function questBranch(b){S.quest.br=b;S.quest.i++;save();render();openQuest()}
 function updateQBtn(){const el=document.getElementById('qbtn');if(!el)return;const q=S&&curQuest(),show=!!q&&['res','vil'].includes(view);
-  el.style.display=show?'flex':'none';if(show)el.classList.toggle('ready',questReady())}
+  el.style.display=show?'flex':'none';if(show){el.classList.toggle('ready',questReady());el.classList.toggle('first',!S.qSeen)}}
+// the Taskmaster button wears a red ring and a badge until it is opened the first time
+function markQuestSeen(){if(S.qSeen)return;S.qSeen=1;save()}
 
 /* ---------- Instructions: the in-game manual ---------- */
 let manTab='bld',manTribe=null;
