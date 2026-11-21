@@ -2197,7 +2197,7 @@ function replay(a){const gid=document.getElementById.bind(document),qs=document.
 function wrapActions(){
   for(const n of ['render','toast','openDlg','closeDlg','openSlot','renderBar','renderTop','renderQueue','renderMap','renderSide','openQuest']){const f=window[n];if(typeof f!=='function'||f.__w)continue;const g=function(...a){if(CO.headless)return;return f.apply(this,a)};g.__w=1;window[n]=g}
 for(const n of ACT){const f=window[n];if(typeof f!=='function'||window['__'+n])continue;window['__'+n]=f;
-  window[n]=function(...args){if(CO.on&&CO.role==='client'&&!CO.headless){const a=capture(n,args);CO.pending.push(a);try{CO.db.ref(`worlds/${CO.wid}/act`).push(a)}catch(e){console.error('order not sent',n,e);toast('Could not send that order to the host: '+e.message)}}return f.apply(this,args)}}}
+  window[n]=function(...args){if(CO.on&&CO.role==='client'&&!CO.headless&&CO.paused&&!['openPage'].includes(n)){toast('One moment: the game is updating.');return}if(CO.on&&CO.role==='client'&&!CO.headless){const a=capture(n,args);CO.pending.push(a);try{CO.db.ref(`worlds/${CO.wid}/act`).push(a)}catch(e){console.error('order not sent',n,e);toast('Could not send that order to the host: '+e.message)}}return f.apply(this,args)}}}
 /* ---------- packing the world for Firebase ---------- */
 async function gz(str){const cs=new CompressionStream('gzip'),w=cs.writable.getWriter();w.write(new TextEncoder().encode(str));w.close();
   const buf=new Uint8Array(await new Response(cs.readable).arrayBuffer());let s='';for(let i=0;i<buf.length;i+=32768)s+=String.fromCharCode.apply(null,buf.subarray(i,i+32768));return btoa(s)}
@@ -2300,12 +2300,26 @@ async function clientReload(){const sn=await readSnap();if(!sn)return;CO.sv=sn.m
 function dgListen(){CO.db.ref(`worlds/${CO.wid}/dg/${CO.uid}`).on('child_added',async d=>{const z=d.val();d.ref.remove();if(CO.role!=='client'||!z)return;
   CO._dgq=(CO._dgq||Promise.resolve()).then(()=>dgApply(z)).catch(e=>console.warn('dg',e))})}
 function dgPresence(){const m=S&&S.mapC;CO.db.ref(`worlds/${CO.wid}/on/${CO.uid}`).set({t:Date.now(),sv:CO.sv||0,ver:GAME_VER,...(m?{mx:m.x,my:m.y}:{})})}
-// everyone should run the same version of the game
+// everyone should run the same version of the game. An update never costs anyone progress:
+// the host saves the world first, then reloads into the new version; friends' own villages are also kept by the host every few seconds.
+async function freshReload(tag){try{const k='hw-upd',o=JSON.parse(sessionStorage.getItem(k)||'null');
+    if(o&&o.tag===tag&&Date.now()-o.t<5*60000)return false;sessionStorage.setItem(k,JSON.stringify({tag,t:Date.now()}))}catch(e){}
+  try{await fetch(location.href,{cache:'reload'})}catch(e){}location.reload();return true}
+async function hostUpdate(newer){if(CO.updating)return;CO.updating=true;
+  showNet(`A friend is on a newer version of Hearthwood. Saving the world and updating… nothing is lost.`);
+  try{await writeSnap();await publishHS();await CO.db.ref(`worlds/${CO.wid}/lease`).set({uid:CO.uid,sid:CO.sid,until:0})}catch(e){console.warn('update save',e)}
+  if(!await freshReload(newer)){CO.updating=false;showNet('');openDlg('Update waiting',`<p>A newer version of Hearthwood is out, but this browser still loaded the old one (the site can take a few minutes to update). Try refreshing again in a few minutes. Your world is saved.</p><button class="btn" onclick="location.reload()">Refresh</button>`)}}
 function verCheck(meta){const mv=meta.ver||'';
   if(CO.role==='host'){if(mv<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(GAME_VER);
-    if(meta.newer&&meta.newer>GAME_VER&&!CO.warnedVer){CO.warnedVer=1;openDlg('A newer version is out',`<p>A friend is on a newer version of Hearthwood. Save happens automatically: just refresh this page to update, and the world carries on.</p><button class="btn" onclick="location.reload()">Refresh now</button>`)}return true}
-  if(mv>GAME_VER){CO.on=false;showNet(`This page is an older version of Hearthwood. <a href="#" onclick="location.reload();return false">Refresh</a> to keep playing.`);return false}
-  if(mv<GAME_VER&&(meta.newer||'')<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/newer`).set(GAME_VER);return true}
+    if(meta.newer&&meta.newer>GAME_VER){hostUpdate(meta.newer);return false}
+    if(meta.newer&&meta.newer<=GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/newer`).remove();return true}
+  // an older page: reload into the new version (the host already has everything this player did)
+  if(mv>GAME_VER){showNet('Hearthwood was updated. Loading the new version…');CO.paused=true;
+    freshReload(mv).then(ok=>{if(!ok)showNet(`Hearthwood was updated, but this browser still loaded the old version. <a href="#" onclick="location.reload();return false">Refresh</a> again in a minute or two.`)});return false}
+  // a newer page than the host's: wait a moment while the host updates, so nothing is sent to old code
+  if(mv<GAME_VER){if((meta.newer||'')<GAME_VER)CO.db.ref(`worlds/${CO.wid}/meta/newer`).set(GAME_VER);CO.paused=true;
+    showNet(`Waiting for ${esc(CO.hostName||'the host')} to switch to the new version… (usually under a minute)`);return false}
+  if(CO.paused){CO.paused=false;showNet('')}return true}
 /* ---------- hosting ---------- */
 async function takeLease(){const r=CO.db.ref(`worlds/${CO.wid}/lease`);let won=false;
   await r.transaction(l=>{if(l&&l.until>Date.now()&&l.sid!==CO.sid)return;won=true;return {uid:CO.uid,sid:CO.sid,name:S&&S.player||'',until:Date.now()+180000}});
@@ -2336,7 +2350,7 @@ let _coT=0;
 async function coopBeat(){if(!CO.on)return;const now=Date.now();
   const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();
   if(!meta){CO.on=false;try{CO.db.ref(`worlds/${CO.wid}/lease`).onDisconnect().cancel()}catch(e){}showNet(`This world was deleted by its creator. <a href="${location.pathname}">Back to the start</a>`);return}
-  if(!verCheck(meta))return;
+  if(!verCheck(meta)){if(CO.role==='client'&&CO.paused){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();if((!l||l.until<now)&&(meta.ver||'')<=GAME_VER&&await takeLease()){CO.paused=false;showNet('');await becomeHost();await CO.db.ref(`worlds/${CO.wid}/meta/ver`).set(GAME_VER)}}return}
   if(CO.role==='client'&&meta.rev&&meta.rev!==CO.rev){const had=CO.rev;CO.rev=meta.rev;if(had)await clientReload()}
   if(CO.role==='host'){const l=(await CO.db.ref(`worlds/${CO.wid}/lease`).get()).val();
     if(l&&l.sid!==CO.sid&&l.until>now){CO.on=false;showNet('Someone else is hosting now. Reloading…');setTimeout(()=>location.reload(),1500);return}
@@ -2390,7 +2404,7 @@ async function coopCreate(pw){if(!await fbInit())return toast('Co-op needs the F
   if(!S.player||S.player==='You')S.player=CO.uname||CO.uid;
   const pv=S.villages[0],p={id:'h_'+CO.uid,uid:CO.uid,name:S.player,tribe:S.tribe,human:true,active:true,joined:true,pers:'veteran',skill:1,vids:[],join:S.created,quit:Infinity};
   S.ai.players.push(p);_pcacheFor=null;S.me=CO.uid;CO.owner=CO.uid;
-  await CO.db.ref(`worlds/${CO.wid}/meta`).set({created:S.created,speed:S.speed,owner:CO.uid,humans:{[CO.uid]:S.player}});
+  await CO.db.ref(`worlds/${CO.wid}/meta`).set({created:S.created,speed:S.speed,owner:CO.uid,ver:GAME_VER,humans:{[CO.uid]:S.player}});
   await takeLease();await becomeHost();history.replaceState(null,'','?w='+CO.pub);coopInvite()}
 async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the world…');
   if(!await fbInit()){showNet('');return false}wrapActions();
