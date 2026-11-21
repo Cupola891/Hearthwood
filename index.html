@@ -2319,7 +2319,9 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   if(hs.al&&hs.al.a&&S.ai){const a=hs.al.a,i=S.ai.alli.findIndex(x=>x.id===a.id);if(i>=0)S.ai.alli[i]=a;else S.ai.alli.push(a);const mem=new Set(hs.al.mem);for(const x of S.ai.players){if(mem.has(x.id))x.ally=a.id;else if(x.ally===a.id)x.ally=null}}
   S.cur=Math.min(S.cur||0,S.villages.length-1);V=S.villages[S.cur];
   CO.pending=CO.pending.filter(a=>a.k>hs.ack);for(const a of CO.pending)replay(a);
-  if(!dragActive())render()}
+  if(!dragActive())render();
+  // the Taskmaster window shows the task the host says you're on
+  if(_qDlg!==null&&S.quest&&S.quest.i!==_qDlg&&document.getElementById('modal').classList.contains('open'))openQuest()}
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- the world around each friend: only what changed; near things every minute, the wider area every 10 minutes, the rest hourly ---------- */
 // version: 0.1 → small updates 0.11, 0.12 … → bigger updates 0.2, 0.3 … → 1.0
@@ -3678,31 +3680,33 @@ function openQuest(flash){
   questStart(q);save();renderTop();
   const list=questList(),n=S.quest.i+1,rw=q.rw==='wood'?q.rwText:q.rw==='rat'?'An army.':q.rw==='tok'?'4 free resource-field upgrades from level 2 to level 3.':q.rw?`<div class="cost">${q.rw.map((v,i)=>`<span>${ICON[i]}${v}</span>`).join('')}</div>`:'<span class="muted">None</span>';
   let act='';
-  if(q.choose)act=`<button class="btn" onclick="questBranch('M')">Military</button> <button class="btn" onclick="questBranch('E')">Economy</button>`;
-  else if(q.ask==='xy')act=`<div style="display:flex;gap:6px;align-items:center">x <input id="qx" type="number" style="width:70px"> y <input id="qy" type="number" style="width:70px"> <button class="btn" onclick="questAnswer()">Submit</button></div>${overflowNote(q.rw)}`;
-  else if(q.ask)act=`<div style="display:flex;gap:6px;align-items:center">${q.ask} <input id="qa" type="number" style="width:90px"> <button class="btn" onclick="questAnswer(${q.rank?'myRank()':''})">Submit</button></div>${overflowNote(q.rw)}`;
-  else if(q.pay)act=capV().res[3]>=q.pay[3]?`<button class="btn" onclick="questCollect()">Hand over 200 crop</button>${overflowNote(q.rw)}`:'<p class="muted">You don’t have 200 crop in your capital yet.</p>';
-  else act=questReady()?`<button class="btn" onclick="questCollect()">Collect reward</button>${overflowNote(q.rw)}`:'<p class="muted">Not done yet. Come back when it’s finished.</p>';
+  if(q.choose)act=`<button class="btn" onclick="questBranch('M',${S.quest.i})">Military</button> <button class="btn" onclick="questBranch('E',${S.quest.i})">Economy</button>`;
+  else if(q.ask==='xy')act=`<div style="display:flex;gap:6px;align-items:center">x <input id="qx" type="number" style="width:70px"> y <input id="qy" type="number" style="width:70px"> <button class="btn" onclick="questAnswer(undefined,${S.quest.i})">Submit</button></div>${overflowNote(q.rw)}`;
+  else if(q.ask)act=`<div style="display:flex;gap:6px;align-items:center">${q.ask} <input id="qa" type="number" style="width:90px"> <button class="btn" onclick="questAnswer(${q.rank?'myRank()':'undefined'},${S.quest.i})">Submit</button></div>${overflowNote(q.rw)}`;
+  else if(q.pay)act=capV().res[3]>=q.pay[3]?`<button class="btn" onclick="questCollect(${S.quest.i})">Hand over 200 crop</button>${overflowNote(q.rw)}`:'<p class="muted">You don’t have 200 crop in your capital yet.</p>';
+  else act=questReady()?`<button class="btn" onclick="questCollect(${S.quest.i})">Collect reward</button>${overflowNote(q.rw)}`:'<p class="muted">Not done yet. Come back when it’s finished.</p>';
   openDlg(`Taskmaster · task ${n} of ${list.length}`,`${flash?`<div class="qflash">${flash}</div>`:''}<h3>${q.t}</h3><p><i>“${q.say}”</i></p><p><b>Task:</b> ${typeof q.task==='function'?q.task():q.task}</p><div style="margin:6px 0"><b>Reward:</b> ${rw}</div>${act}
    <p style="margin-top:14px;font-size:12px"><a href="#" onclick="if(confirmSkip.armed){S.quest.off=1;save();render();openQuest()}else{confirmSkip.armed=1;this.textContent='Click again to skip all remaining tasks'}return false">Skip the tasks</a></p>`);
-  confirmSkip.armed=0;
+  confirmSkip.armed=0;if(!CO.headless)_qDlg=S.quest.i;
   const f=document.getElementById('qa')||document.getElementById('qx');if(f)setTimeout(()=>f.focus(),0);
 }
 const confirmSkip={armed:0};
 function overflowNote(rw){if(!Array.isArray(rw))return '';const lost=withV(capV(),()=>{const c=caps();return rw.map((v,i)=>Math.max(0,Math.floor(V.res[i]+v-c[i])))});
   if(!lost.some(x=>x>0))return '';return ` <span style="color:var(--bad);font-size:12.5px">Not enough storage room: ${lost.map((v,i)=>v>0?`${fmt(v)} ${RES[i].toLowerCase()}`:'').filter(Boolean).join(', ')} would be lost.</span>`}
-function questCollect(){const q=curQuest();if(!q)return;advance(Date.now());
+// qi: the task this claim is for; a late or repeated tap for an earlier task is ignored
+const questStale=qi=>qi!==undefined&&S.quest&&qi!==S.quest.i;
+function questCollect(qi){if(questStale(qi))return;const q=curQuest();if(!q)return;advance(Date.now());
   if(q.pay){const cv=capV();if(cv.res[3]<q.pay[3])return toast('Not enough crop.');for(let i=0;i<4;i++)cv.res[i]-=q.pay[i]}
   else if(!questReady())return toast('That task is not finished yet.');
   questDone(questReward(q))}
 // shown: the rank on the player's own screen when they pressed Submit (a friend's copy of the world can lag the host's)
-function questAnswer(shown){const q=curQuest();if(!q)return;let ok;
+function questAnswer(shown,qi){if(questStale(qi))return;const q=curQuest();if(!q)return;let ok;
   if(q.ask==='xy'){const x=+document.getElementById('qx').value,y=+document.getElementById('qy').value,v=questNb(),at=aiAt(x,y);
     ok=v?at===v:!!at}
   else{const a=document.getElementById('qa').value.trim();ok=a===q.ans()||(!!q.rank&&shown!==undefined&&a===String(shown))}
   if(!ok)return toast(q.ask==='xy'?'That isn’t the right village. Check the name on the map.':'That isn’t right. Have another look.');
   questDone(questReward(q))}
-function questBranch(b){S.quest.br=b;S.quest.i++;save();render();openQuest()}
+function questBranch(b,qi){if(questStale(qi))return;S.quest.br=b;S.quest.i++;save();render();openQuest()}
 function updateQBtn(){const el=document.getElementById('qbtn');if(!el)return;const q=S&&curQuest(),show=!!q&&['res','vil'].includes(view);
   el.style.display=show?'flex':'none';if(show){el.classList.toggle('ready',questReady());el.classList.toggle('first',!S.qSeen)}}
 // what changed in the latest update (shown from the BETA button, which glows until opened)
@@ -4009,7 +4013,8 @@ function openPage(k,sel){view=k;S.pageSel=sel;render()}
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- dialogs ---------- */
-function openDlg(title,html){{const d=document.getElementById('dlg');if(d)d.classList.toggle('wide',!!openDlg.wide);openDlg.wide=false}document.getElementById('dlgc').innerHTML=`<div class="hd">${title}</div><div class="bd">${html}</div>`;document.getElementById('modal').classList.add('open');placeDlg()}
+let _qDlg=null; // which task the open Taskmaster window shows (null: it isn't open)
+function openDlg(title,html){_qDlg=null;{const d=document.getElementById('dlg');if(d)d.classList.toggle('wide',!!openDlg.wide);openDlg.wide=false}document.getElementById('dlgc').innerHTML=`<div class="hd">${title}</div><div class="bd">${html}</div>`;document.getElementById('modal').classList.add('open');placeDlg()}
 let dlgOff={x:0,y:0};
 const isPhone=()=>matchMedia('(max-width:699px)').matches;
 function placeDlg(){if(isPhone()){dlgOff={x:0,y:0};document.getElementById('dlg').style.transform='';return}const d=document.getElementById('dlg'),r=d.getBoundingClientRect(),bx=r.left-dlgOff.x,by=r.top-dlgOff.y;
@@ -4019,7 +4024,7 @@ document.addEventListener('mousedown',e=>{const hd=e.target.closest&&e.target.cl
   const sx=e.clientX-dlgOff.x,sy=e.clientY-dlgOff.y;
   const mv=ev=>{dlgOff.x=ev.clientX-sx;dlgOff.y=ev.clientY-sy;placeDlg()},up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up)};
   addEventListener('mousemove',mv);addEventListener('mouseup',up)});
-function closeDlg(){document.getElementById('modal').classList.remove('open');dlgState=null}
+function closeDlg(){document.getElementById('modal').classList.remove('open');dlgState=null;_qDlg=null}
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeDlg()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
 let dlgState=null;
