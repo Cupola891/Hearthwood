@@ -201,7 +201,7 @@ body:not(.devon) .dev,body:not(.devon) [data-dev]{display:none!important;pointer
 
 <script>
 "use strict";
-function showCrash(m){try{let d=document.getElementById("crash");if(!d){d=document.createElement("div");d.id="crash";document.body.appendChild(d)}d.textContent="Something went wrong — please tell Claude this message:\n"+m}catch(e){}}
+function showCrash(m){try{let d=document.getElementById("crash");if(!d){d=document.createElement("div");d.id="crash";document.body.appendChild(d)}const fr=typeof CO!=="undefined"&&CO.on&&CO.uid&&CO.owner&&CO.uid!==CO.owner;d.textContent=(fr?"Something went wrong — send a photo of this page to your host"+(CO.ownerName?" ("+CO.ownerName+")":"")+":\n":"Something went wrong — please tell Claude this message:\n")+m}catch(e){}}
 window.addEventListener("error",e=>showCrash((e.message||"error")+" @ line "+(e.lineno||"?")));
 window.addEventListener("unhandledrejection",e=>showCrash(String(e.reason)));
 /* =====================================================================
@@ -2238,7 +2238,7 @@ function mergeHS(hs){if(!S||!hs)return;CO.lastHS=hs;const keep={};for(const k of
   if(!dragActive())render()}
 const dragActive=()=>typeof drag!=='undefined'&&drag&&drag.on;
 /* ---------- the world around each friend: only what changed; near things every minute, the wider area every 10 minutes, the rest hourly ---------- */
-const GAME_VER='2026-11-21b';
+const GAME_VER='2026-11-21c';
 const DG_NEAR=20,DG_MID=100,DG_LOOK=25;
 function dgVSig(v){return [v.pid,v.name,v.capital?1:0,v.ww?wwLvl(v):0,Math.floor(v.loy??100),v.wall||0,v.rl||0].join('|')}
 function dgPSig(p){return [p.name,p.ally||'',p.active?1:0,p.vids.join(',')].join('|')}
@@ -2414,7 +2414,7 @@ async function coopBoot(pub,pw){CO.pub=pub;CO.on=true;showNet('Connecting to the
   CO.wid=await worldKey(pub,pw);
   const meta=(await CO.db.ref(`worlds/${CO.wid}/meta`).get()).val();if(!meta){showNet('');coopPwForm(pub,'That password does not open this world.');return true}
   try{localStorage.setItem('hw-pw-'+pub,pw)}catch(e){}
-  await coopRelink(meta);CO.owner=meta.owner;CO.rev=meta.rev;
+  await coopRelink(meta);CO.owner=meta.owner;CO.ownerName=meta.humans&&meta.humans[meta.owner]||'';CO.rev=meta.rev;
   if(!meta.humans||!meta.humans[CO.uid]){showNet('');coopJoinForm(meta);return true}
   await coopEnter();return true}
 function coopPwForm(pub,err){openDlg('This world is password protected',`${err?`<p class="bad">${err}</p>`:''}<label class="f">World password</label><input type="password" id="wpw" maxlength="40" onkeydown="if(event.key==='Enter')coopPwGo('${pub}')">
