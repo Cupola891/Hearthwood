@@ -2293,6 +2293,11 @@ function questRepair(){if(!S||!S.ai||(S.ai.qlv||0)!==2)return;
     let done=true;try{done=!!prev.ok()}catch(e){}if(!done)q.i--};
   for(const p of S.ai.players.filter(p=>p.human)){if(p.uid===S.me)fix();else asHuman(p.uid,fix)}
   S.ai.qlv=3}
+// one-off: the world creator's Warehouse upgrade lost in a hosting handover (Nov 2026). Their capital's level-1 Warehouse goes to level 2, once.
+function fixLostWarehouse(){if(!S||!S.ai||S.ai.fixWH||!CO.on||!CO.owner)return;if(S.created>Date.UTC(2026,10,24)){S.ai.fixWH=1;return}
+  const run=()=>{const cv=S.villages.find(v=>v.capital)||S.villages[0];if(!cv)return false;
+    const k=Object.keys(cv.slots).find(k=>cv.slots[k].b===10&&cv.slots[k].l===1);if(!k||cv.jobs.some(j=>j.key===k))return false;cv.slots[k].l=2;return true};
+  const ok=CO.owner===S.me?run():humanP(CO.owner)?asHuman(CO.owner,run):false;S.ai.fixWH=1;if(ok)console.info('Warehouse restored to level 2')}
 // a saved world stores "never quits" as null; read it back as never, and bring back anyone that mistake retired
 function fixQuit(W){if(!W||!W.ai)return;for(const p of W.ai.players)if(p.quit===null||p.quit===undefined){p.quit=Infinity;if(p.joined&&!p.nat&&!p.active)p.active=true}}
 /* ---------- each human's own part, published every few seconds by the host ---------- */
@@ -2427,7 +2432,7 @@ async function becomeHost(have){
       const key=m=>[m.type,m.from,m.fromA,m.x,m.y,m.end].join('|'),have=new Set(S.moves.map(key));for(const m of hs.moves)if(!have.has(key(m)))S.moves.push(m);
       Object.assign(S.oases=S.oases||{},hs.oases);CO.ackOf[uid]=hs.ack||0}
     applyRelinks((await CO.db.ref(`worlds/${CO.wid}/relink`).get()).val());aiIndex();_pcacheFor=null;unstash(CO.uid)}
-  fixFriendNames();aiRequitOnce();questMigrate();questRepair();
+  fixFriendNames();aiRequitOnce();questMigrate();questRepair();fixLostWarehouse();
   if(!S.villages||!S.villages.length){showNet('Could not find your villages in this world. Reload the page to try again.');CO.role=null;return}
   await catchUp();advance(Date.now());render();showNet('');
   CO.db.ref(`worlds/${CO.wid}/act`).on('child_added',d=>{const a=d.val();d.ref.remove();if(!a||a.sid===CO.sid)return;
@@ -2568,7 +2573,7 @@ function aiSetup(count,mix){
   const n={};for(const p of S.ai.players)n[p.pers]=(n[p.pers]||0)+1;const N=S.ai.players.length;
   k=1;for(let it=0;it<40;it++){const sh=keys.reduce((a,x)=>a+(n[x]||0)/N*Math.min(1,k*QUIT_W[x]),0);k*=target/Math.max(.01,sh)}
   for(const p of S.ai.players)if(R()<Math.min(1,k*QUIT_W[p.pers]))p.quit=Math.max(p.join,now)+(5+16*Math.sqrt(R()))*D;
-  S.ai.qv=2;S.ai.qlv=3;
+  S.ai.qv=2;S.ai.qlv=3;S.ai.fixWH=1;
   S.ai.players.sort((a,b)=>a.join-b.join);
   // early arrivals settle near the middle, later ones further out, as on a real server
   S.ai.players.forEach((p,i)=>{const rad=NAT_R+3+Math.sqrt(i+1)*1.6*(0.8+R()*0.4),a=R()*Math.PI*2;p.home={x:wrapC(Math.round(Math.cos(a)*rad)),y:wrapC(Math.round(Math.sin(a)*rad))}});
